@@ -1,24 +1,59 @@
-# ReScene PowerShell Module
+# ReScenePS
 
-PowerShell implementation for reconstructing RAR archives from SRR files and MKV samples from SRS files.
+PowerShell module for reconstructing RAR archives from SRR files and MKV samples from SRS files.
 
-## Quick Start
+## Installation
 
+### From PowerShell Gallery (Recommended)
 ```powershell
-# Import the module
-Import-Module .\ReScene.psm1
+Install-Module -Name ReScenePS
+```
 
-# Reconstruct RAR archive from SRR
-Invoke-SrrRestore -SrrPath "archive.srr" -OutputPath ".\output"
-
-# Reconstruct MKV sample from SRS
-Restore-SrsVideo -SrsPath "sample.srs" -MainMkvPath "main.mkv" -OutputPath "sample.mkv"
+### From Source
+```powershell
+git clone https://github.com/yourusername/ReScenePS.git
+cd ReScenePS
+./build.ps1 -Bootstrap
+./build.ps1 -Task Build
+Import-Module ./Output/ReScenePS/0.1.0/ReScenePS.psd1
 ```
 
 ## Requirements
 
-- PowerShell 7+
+- PowerShell 7.0+
 - CRC Module: `Install-Module -Name CRC`
+
+## Quick Start
+
+### Reconstruct RAR Archives from SRR
+
+```powershell
+# Simple usage - auto-detects SRR and source files in current directory
+Invoke-SrrRestore
+
+# Explicit paths
+Invoke-SrrRestore -SrrFile "release.srr" -SourcePath "./sources" -OutputPath "./output"
+
+# Keep source files after reconstruction
+Invoke-SrrRestore -KeepSrr -KeepSources
+```
+
+### Reconstruct MKV Sample from SRS
+
+```powershell
+# High-level reconstruction
+Restore-SrsVideo -SrsFilePath "sample.srs" -SourceMkvPath "main.mkv" -OutputMkvPath "sample.mkv"
+```
+
+### Inspect SRR/SRS Files
+
+```powershell
+# Display SRR structure and metadata
+Show-SrrInfo -SrrFile "release.srr"
+
+# Get SRS metadata
+ConvertFrom-SrsFileMetadata -FilePath "sample.srs"
+```
 
 ## Functions
 
@@ -26,19 +61,87 @@ Restore-SrsVideo -SrsPath "sample.srs" -MainMkvPath "main.mkv" -OutputPath "samp
 
 | Function | Description |
 |----------|-------------|
-| `Show-SrrInfo` | Display SRR file metadata and structure |
-| `Invoke-SrrReconstruct` | Reconstruct RAR files from SRR |
-| `Invoke-SrrRestore` | Complete end-to-end restoration workflow |
-| `Test-ReconstructedRar` | Validate reconstructed archives |
+| `Show-SrrInfo` | Display SRR file metadata and block structure |
+| `Get-SrrBlock` | Parse SRR file and return block objects |
+| `Invoke-SrrReconstruct` | Reconstruct RAR files from SRR and source files |
+| `Invoke-SrrRestore` | Complete end-to-end restoration with validation and cleanup |
 
-### SRS (MKV Reconstruction)
+### SRS (MKV Sample Reconstruction)
 
 | Function | Description |
 |----------|-------------|
-| `Get-SrsInfo` | Display SRS file metadata |
-| `Export-MkvTrackData` | Extract track data from source MKV |
-| `Build-SampleMkvFromSrs` | Combine SRS structure with extracted data |
-| `Restore-SrsVideo` | High-level reconstruction entry point |
+| `ConvertFrom-SrsFileMetadata` | Parse SRS file and return metadata object |
+| `Export-SampleTrackData` | Extract track data from source MKV |
+| `Build-SampleMkvFromSrs` | Combine SRS structure with extracted track data |
+| `Restore-SrsVideo` | High-level sample reconstruction entry point |
+
+## Development
+
+### Build System
+
+This project uses PowerShellBuild + psake for builds:
+
+```powershell
+# Install build dependencies
+./build.ps1 -Bootstrap
+
+# Run tests
+./build.ps1 -Task Test
+
+# Build module
+./build.ps1 -Task Build
+
+# Run PSScriptAnalyzer
+./build.ps1 -Task Analyze
+
+# List all available tasks
+./build.ps1 -Help
+```
+
+### VSCode Integration
+
+Open the project in VSCode and use:
+- `Ctrl+Shift+B` - Build module
+- `Ctrl+Shift+T` - Run tests
+
+### Project Structure
+
+```
+ReScenePS/
+├── ReScenePS/
+│   ├── Classes/          # Block type definitions
+│   ├── Private/          # Internal helper functions
+│   ├── Public/           # Exported cmdlets
+│   ├── ReScenePS.psd1    # Module manifest
+│   └── ReScenePS.psm1    # Module loader
+├── tests/
+│   ├── Manifest.tests.ps1
+│   ├── Help.tests.ps1
+│   └── Meta.tests.ps1
+├── .github/workflows/    # CI/CD
+├── .vscode/              # VSCode configuration
+├── build.ps1             # Build entry point
+├── build.psake.ps1       # Build tasks
+├── build.depend.psd1     # Build dependencies
+└── requirements.psd1     # Runtime dependencies
+```
+
+## How It Works
+
+### SRR Reconstruction
+
+SRR files contain RAR metadata without the actual file data:
+1. Parse SRR to extract block structure (headers, file entries)
+2. Locate source files matching the expected names and sizes
+3. Reconstruct RAR volumes by combining headers from SRR with data from source files
+4. Validate CRCs against embedded SFV checksums
+
+### SRS Reconstruction
+
+SRS files contain MKV structure without frame data:
+1. Parse SRS to get track metadata and byte offsets where data matches
+2. Extract matching track data from the full source MKV
+3. Rebuild sample by injecting extracted data into the SRS structure
 
 ## License
 

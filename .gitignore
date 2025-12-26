@@ -1,0 +1,16 @@
+# Build output
+Output/
+
+# Test results
+testResults.xml
+codeCoverage.xml
+out/
+
+# IDE
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

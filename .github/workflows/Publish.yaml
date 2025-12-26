@@ -1,0 +1,29 @@
+name: Publish to PowerShell Gallery
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Module
+        shell: pwsh
+        run: ./build.ps1 -Task Build -Bootstrap
+
+      - name: Publish to PowerShell Gallery
+        shell: pwsh
+        env:
+          PS_GALLERY_KEY: ${{ secrets.PS_GALLERY_KEY }}
+        run: |
+          $modulePath = Get-ChildItem -Path ./Output/ReScenePS -Directory |
+            Sort-Object Name -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          Write-Host "Publishing module from: $modulePath"
+          Publish-Module -Path $modulePath -NuGetApiKey $env:PS_GALLERY_KEY -Verbose

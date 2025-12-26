@@ -1,0 +1,28 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](http://keepachangelog.com/)
+and this project adheres to [Semantic Versioning](http://semver.org/).
+
+## [Unreleased]
+
+## [0.1.0] - 2025-12-26
+
+### Added
+
+- Initial release of ReScenePS PowerShell module
+- Complete SRR (Scene Release Reconstruct) file support:
+  - `Show-SrrInfo` - Display SRR file metadata and block structure
+  - `Get-SrrBlock` - Parse SRR files and return block objects
+  - `Invoke-SrrReconstruct` - Reconstruct RAR archives from SRR metadata
+  - `Invoke-SrrRestore` - Complete end-to-end restoration workflow with validation
+- Complete SRS (Sample Reconstruction) file support:
+  - `ConvertFrom-SrsFileMetadata` - Parse EBML SRS file metadata
+  - `Export-SampleTrackData` - Extract track data from source MKV files
+  - `Build-SampleMkvFromSrs` - Reconstruct sample MKV from SRS and track data
+  - `Restore-SrsVideo` - High-level sample reconstruction entry point
+- Modern build system using PowerShellBuild + psake + PSDepend
+- Cross-platform CI/CD with GitHub Actions (Windows, Linux, macOS)
+- Comprehensive Pester 5.x test infrastructure
+- VSCode integration with build tasks and PowerShell formatting
