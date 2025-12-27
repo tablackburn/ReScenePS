@@ -5,45 +5,43 @@ online version:
 schema: 2.0.0
 ---
 
-# Restore-SrsVideo
+# Build-SampleAviFromSrs
 
 ## SYNOPSIS
-Reconstruct a sample video from an EBML SRS file and source MKV.
+Reconstructs an AVI sample file from an SRS file and source video.
 
 ## SYNTAX
 
 ```
-Restore-SrsVideo [-SrsFilePath] <String> [-SourcePath] <String> [-OutputPath] <String>
+Build-SampleAviFromSrs [-SrsData] <Byte[]> [-SourcePath] <String> [-OutputPath] <String>
  [-ProgressAction <ActionPreference>] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
-High-level function that orchestrates the reconstruction of a video sample from
-an SRS file.
-It performs the following steps:
+AVI SRS files store the structure of the original sample (frame headers
+and their sizes) without the actual frame data.
+This function:
 1.
-Verifies the SRS file is EBML format (MKV)
+Parses the SRS to get track metadata (match offsets in source)
 2.
-Parses SRS metadata to get track information
+Copies the AVI structure from the SRS
 3.
-Extracts track data from the source MKV file
-4.
-Rebuilds the sample MKV by combining SRS structure with extracted track data
+Injects frame data from the source file at the correct offsets
 
 ## EXAMPLES
 
 ### EXAMPLE 1
 ```
-Restore-SrsVideo -SrsFilePath "sample.srs" -SourceMkvPath "movie.mkv" -OutputMkvPath "sample.mkv"
+Build-SampleAviFromSrs -SrsData $srsBytes -SourcePath "movie.avi" -OutputPath "sample.avi"
 ```
 
 ## PARAMETERS
 
-### -SrsFilePath
-Path to the extracted .srs file (EBML format).
+### -SrsData
+Raw bytes of the SRS file.
 
 ```yaml
-Type: String
+Type: Byte[]
 Parameter Sets: (All)
 Aliases:
 
@@ -55,12 +53,12 @@ Accept wildcard characters: False
 ```
 
 ### -SourcePath
-Path to the source video file (main movie MKV or AVI).
+Path to the source AVI file containing the full movie.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: SourceMkvPath
+Aliases:
 
 Required: True
 Position: 2
@@ -70,12 +68,12 @@ Accept wildcard characters: False
 ```
 
 ### -OutputPath
-Path for the reconstructed sample video.
+Path for the reconstructed sample AVI file.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: OutputMkvPath
+Aliases:
 
 Required: True
 Position: 3
@@ -107,9 +105,7 @@ This cmdlet supports the common parameters: -Debug, -ErrorAction, -ErrorVariable
 ## OUTPUTS
 
 ### System.Boolean
-### Returns $true if reconstruction was successful, $false otherwise.
+### Returns $true if reconstruction was successful.
 ## NOTES
-Uses match_offset from SRS metadata to extract ONLY the sample portion
-from the main file, not the entire file.
 
 ## RELATED LINKS

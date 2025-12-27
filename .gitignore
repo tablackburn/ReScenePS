@@ -6,6 +6,12 @@ testResults.xml
 codeCoverage.xml
 out/
 
+# Local test configuration (contains machine-specific paths)
+tests/TestConfig.psd1
+
+# Downloaded test samples
+tests/samples/
+
 # IDE
 .idea/
 *.suo

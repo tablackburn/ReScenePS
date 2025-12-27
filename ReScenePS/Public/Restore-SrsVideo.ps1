@@ -1,27 +1,42 @@
 function Restore-SrsVideo {
     <#
     .SYNOPSIS
-        Reconstruct a sample video from an EBML SRS file and source MKV.
+        Reconstruct a sample video from an SRS file and source video.
 
     .DESCRIPTION
         High-level function that orchestrates the reconstruction of a video sample from
-        an SRS file. It performs the following steps:
-        1. Verifies the SRS file is EBML format (MKV)
-        2. Parses SRS metadata to get track information
-        3. Extracts track data from the source MKV file
-        4. Rebuilds the sample MKV by combining SRS structure with extracted track data
+        an SRS file. Supports both MKV (EBML) and AVI (RIFF) formats:
+
+        For MKV samples:
+        1. Parses SRS metadata to get track information
+        2. Extracts track data from the source MKV file
+        3. Rebuilds the sample MKV by combining SRS structure with extracted track data
+
+        For AVI samples:
+        1. Parses SRSF/SRST metadata for track offsets
+        2. Copies AVI structure from SRS
+        3. Injects frame data from source AVI at match offsets
 
     .PARAMETER SrsFilePath
-        Path to the extracted .srs file (EBML format).
+        Path to the extracted .srs file (EBML or RIFF format).
+
+    .PARAMETER SourcePath
+        Path to the source video file (main movie MKV or AVI).
+
+    .PARAMETER OutputPath
+        Path for the reconstructed sample video.
 
     .PARAMETER SourceMkvPath
-        Path to the source MKV file (main movie).
+        Alias for SourcePath for backward compatibility.
 
     .PARAMETER OutputMkvPath
-        Path for the reconstructed sample MKV.
+        Alias for OutputPath for backward compatibility.
 
     .EXAMPLE
-        Restore-SrsVideo -SrsFilePath "sample.srs" -SourceMkvPath "movie.mkv" -OutputMkvPath "sample.mkv"
+        Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "movie.mkv" -OutputPath "sample.mkv"
+
+    .EXAMPLE
+        Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "movie.avi" -OutputPath "sample.avi"
 
     .NOTES
         Uses match_offset from SRS metadata to extract ONLY the sample portion
@@ -37,24 +52,35 @@ function Restore-SrsVideo {
         [string]$SrsFilePath,
 
         [Parameter(Mandatory)]
-        [string]$SourceMkvPath,
+        [Alias('SourceMkvPath')]
+        [string]$SourcePath,
 
         [Parameter(Mandatory)]
-        [string]$OutputMkvPath
+        [Alias('OutputMkvPath')]
+        [string]$OutputPath
     )
 
     if (-not (Test-Path $SrsFilePath)) {
         throw "SRS file not found: $SrsFilePath"
     }
 
-    if (-not (Test-Path $SourceMkvPath)) {
-        throw "Source MKV not found: $SourceMkvPath"
+    if (-not (Test-Path $SourcePath)) {
+        throw "Source video not found: $SourcePath"
     }
 
-    # Verify SRS is EBML type
+    # Detect SRS type
     $srsInfo = Get-SrsInfo -FilePath $SrsFilePath
-    if ($srsInfo.Type -notmatch 'EBML') {
-        Write-Warning "SRS type '$($srsInfo.Type)' is not EBML; skipping video reconstruction"
+    $srsType = $srsInfo.Type
+
+    # Handle AVI/RIFF format
+    if ($srsType -match 'RIFF') {
+        Write-Verbose "Detected AVI SRS format"
+        return Restore-SrsVideoAvi -SrsFilePath $SrsFilePath -SourcePath $SourcePath -OutputPath $OutputPath
+    }
+
+    # Handle EBML/MKV format
+    if ($srsType -notmatch 'EBML') {
+        Write-Warning "SRS type '$srsType' is not supported; skipping video reconstruction"
         return $false
     }
 
