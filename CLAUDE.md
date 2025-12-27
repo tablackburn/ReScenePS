@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ReScenePS is a PowerShell module for reconstructing RAR archives from SRR (Scene Release Reconstruct) files and MKV video samples from SRS (Sample ReScene) files. It provides a complete toolchain for scene release reconstruction.
+ReScenePS is a PowerShell module for reconstructing RAR archives from SRR (Scene Release Reconstruct) files and video samples (MKV and AVI) from SRS (Sample ReScene) files. It provides a complete toolchain for scene release reconstruction.
 
 ## Build and Test Commands
 
@@ -44,6 +44,15 @@ pwsh -File ./build.ps1 -Help
 pwsh -Command "Set-BuildEnvironment -Force; Invoke-Pester -Path tests/Help.tests.ps1"
 ```
 
+### Run Unit Tests
+```powershell
+# Run all unit tests
+pwsh -Command "Set-BuildEnvironment -Force; Invoke-Pester -Path tests/Unit/"
+
+# Run specific unit test file
+pwsh -Command "Set-BuildEnvironment -Force; Invoke-Pester -Path tests/Unit/Get-EbmlUInt.tests.ps1"
+```
+
 ### Import Module Locally
 ```powershell
 # Import from built output
@@ -78,9 +87,13 @@ pwsh -Command "Import-Module ./ReScenePS/ReScenePS.psd1 -Force"
 - `Read-EbmlUIntStream`, `Get-EbmlElementFromBuffer` - Stream-based EBML reading
 - `ConvertTo-EbmlElementString` - Debug formatting
 
-**SRS Parsing**:
+**SRS Parsing (MKV)**:
 - `ConvertFrom-SrsFile`, `ConvertFrom-SrsFileData`, `ConvertFrom-SrsTrackData` - SRS metadata extraction
 - `Get-SrsInfo` - High-level SRS file info retrieval
+
+**SRS Parsing (AVI)**:
+- `ConvertFrom-SrsAviFile` - AVI-specific SRS file parsing
+- `Restore-SrsVideoAvi` - AVI-specific reconstruction workflow
 
 **Utilities**:
 - `Find-SourceFile` - Locate source files by name/size
@@ -88,6 +101,9 @@ pwsh -Command "Import-Module ./ReScenePS/ReScenePS.psd1 -Force"
 - `Export-MkvTrackData` - Extract track data from MKV files
 - `ConvertFrom-SfvFile` - Parse SFV checksum files
 - `Test-ReconstructedRar` - Validate RAR CRCs against SFV
+- `Get-Crc32` - CRC32 calculation for file validation
+- `Compare-ByteArray` - Binary data comparison
+- `ConvertTo-ByteString` - Binary data formatting for debugging
 
 ### Public Commands
 
@@ -101,7 +117,8 @@ pwsh -Command "Import-Module ./ReScenePS/ReScenePS.psd1 -Force"
 - `ConvertFrom-SrsFileMetadata` - Parse SRS file and return metadata object
 - `Export-SampleTrackData` - Extract track data from main MKV for sample reconstruction
 - `Build-SampleMkvFromSrs` - Combine SRS structure with extracted track data
-- `Restore-SrsVideo` - High-level sample reconstruction entry point
+- `Build-SampleAviFromSrs` - Combine SRS structure with extracted track data (AVI format)
+- `Restore-SrsVideo` - High-level sample reconstruction entry point (auto-detects MKV/AVI)
 
 ## Testing Requirements
 
@@ -120,6 +137,48 @@ Tests run against built module in `Output/<ModuleName>/<Version>/` directory. Th
 ### Meta.tests.ps1
 - All files must be UTF-8 encoding (no UTF-16)
 - No tab characters allowed (use 4 spaces for indentation)
+
+### Unit Tests
+
+Unit tests for private functions and classes are located in `tests/Unit/`. These use Pester's `InModuleScope` to access non-exported functions:
+
+```powershell
+InModuleScope ReScenePS {
+    Describe 'Get-EbmlUInt' {
+        It 'parses single-byte values' {
+            Get-EbmlUInt -Data @(0x81) | Should -Be 1
+        }
+    }
+}
+```
+
+**Current unit test coverage:**
+- `BlockReader.tests.ps1` - Binary reader class (14 tests)
+- `BlockType.tests.ps1` - Block type enum validation (6 tests)
+- `RarPackedFileBlock.tests.ps1` - RAR file block parsing (18 tests)
+- `RarEndArchiveBlock.tests.ps1` - RAR end block parsing (13 tests)
+- `ConvertFrom-SfvFile.tests.ps1` - SFV checksum parsing (11 tests)
+- `Get-EbmlElementID.tests.ps1` - EBML element ID parsing (5 tests)
+- `Get-EbmlUInt.tests.ps1` - EBML unsigned int parsing (8 tests)
+- `Get-EbmlUIntLength.tests.ps1` - EBML length detection (4 tests)
+
+### TestHelpers.psm1
+
+Test infrastructure module providing utilities for test setup:
+
+- `Initialize-TestEnvironment` - Sets up module import paths from build output
+- `Get-UnrarPath` / `Invoke-UnrarExtract` - UnRAR tool integration for functional tests
+- `New-TestTempDirectory` / `Remove-TestTempDirectory` - Test isolation utilities
+- `Test-FileUnicode` / `Get-TextFilesList` - Meta test utilities for encoding validation
+
+### Functional.tests.ps1
+
+End-to-end tests using real SRR/SRS files. Configure test cases in `tests/TestConfig.psd1`:
+- SRR parsing tests (block counts, stored files, RAR volumes)
+- RAR reconstruction tests (requires UnRAR and source files)
+- Sample reconstruction tests (MKV and AVI formats)
+
+Copy `tests/TestConfig.Example.psd1` to `tests/TestConfig.psd1` and customize paths for your environment.
 
 ## Binary File Formats
 
@@ -155,6 +214,11 @@ SRS files are EBML (like MKV) with:
 1. Parse SRS to get track metadata and match offsets
 2. Extract track data from source MKV starting at match offsets
 3. Rebuild MKV: copy SRS structure, inject extracted track data into blocks
+
+**Sample AVI Reconstruction**:
+1. Parse SRS (AVI variant) to get chunk metadata and match offsets
+2. Extract frame data from source AVI at match offsets
+3. Rebuild AVI: copy SRS structure, inject extracted frame data into chunks
 
 ## Versioning and Changelog
 
