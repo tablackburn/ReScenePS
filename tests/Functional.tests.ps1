@@ -305,11 +305,19 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
             $script:networkRars | Should -Not -BeNullOrEmpty
         }
 
-        It 'Source files extracted successfully' -Skip:(-not $script:networkRars) {
+        It 'Source files extracted successfully' {
+            if (-not $script:networkRars) {
+                Set-ItResult -Skipped -Because 'No RAR files found in network path'
+                return
+            }
             $script:extractedSuccessfully | Should -Be $true
         }
 
-        It 'Reconstructs RAR volumes successfully' -Skip:(-not $script:extractedSuccessfully) {
+        It 'Reconstructs RAR volumes successfully' {
+            if (-not $script:extractedSuccessfully) {
+                Set-ItResult -Skipped -Because 'Source file extraction failed'
+                return
+            }
             $result = Invoke-SrrReconstruct -SrrFile $sample.SrrPath -SourcePath $script:sourceDir -OutputPath $script:testOutputDir
 
             # Check that at least some RAR files were created
@@ -317,7 +325,11 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
             $createdRars.Count | Should -BeGreaterThan 0
         }
 
-        It 'Validates reconstructed RARs against SFV' -Skip:(-not $script:extractedSuccessfully) {
+        It 'Validates reconstructed RARs against SFV' {
+            if (-not $script:extractedSuccessfully) {
+                Set-ItResult -Skipped -Because 'Source file extraction failed'
+                return
+            }
             # Extract SFV from SRR and validate
             $blocks = Get-SrrBlock -SrrFile $sample.SrrPath
             $sfvBlocks = $blocks | Where-Object {
@@ -385,7 +397,11 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
             $script:setupSuccessful | Should -Be $true
         }
 
-        It 'WhatIf mode shows preview without creating RAR files' -Skip:(-not $script:setupSuccessful) {
+        It 'WhatIf mode shows preview without creating RAR files' {
+            if (-not $script:setupSuccessful) {
+                Set-ItResult -Skipped -Because 'Setup failed - source extraction unsuccessful'
+                return
+            }
             $outputDir = Join-Path -Path $script:testWorkDir -ChildPath 'output'
             New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
 
@@ -395,7 +411,11 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
             $createdRars.Count | Should -Be 0
         }
 
-        It 'Completes full restore' -Skip:(-not $script:setupSuccessful) {
+        It 'Completes full restore' {
+            if (-not $script:setupSuccessful) {
+                Set-ItResult -Skipped -Because 'Setup failed - source extraction unsuccessful'
+                return
+            }
             $outputDir = Join-Path -Path $script:testWorkDir -ChildPath 'output-full'
             New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
 
