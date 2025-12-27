@@ -119,6 +119,12 @@ function Invoke-SrrReconstruct {
             $volumeData = $rarVolumes[$volumeName]
             $outputFile = Join-Path $OutputPath $volumeName
 
+            # Ensure parent directory exists (for multi-disc releases like CD1/, CD2/)
+            $outputDir = Split-Path $outputFile -Parent
+            if ($outputDir -and -not (Test-Path $outputDir)) {
+                [System.IO.Directory]::CreateDirectory($outputDir) | Out-Null
+            }
+
             Write-Host "Reconstructing: $volumeName" -ForegroundColor Yellow
             $rarStream = [System.IO.FileStream]::new($outputFile, [System.IO.FileMode]::Create)
 
