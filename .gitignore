@@ -1,6 +1,9 @@
 # Build output
 Output/
 
+# Downloaded build tools (UnRAR, etc.)
+tools/
+
 # Test results
 testResults.xml
 codeCoverage.xml

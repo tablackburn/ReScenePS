@@ -171,21 +171,16 @@ BeforeDiscovery {
 }
 
 BeforeAll {
-    # Import the module
-    $moduleManifestPath = Join-Path -Path $Env:BHBuildOutput -ChildPath "$Env:BHProjectName.psd1"
-    Get-Module $Env:BHProjectName | Remove-Module -Force -ErrorAction 'Ignore'
-    Import-Module -Name $moduleManifestPath -Verbose:$false -ErrorAction 'Stop'
+    # Import test helpers and module
+    Import-Module "$PSScriptRoot/TestHelpers.psm1" -Force
+    Initialize-TestEnvironment
 
     # Create temp directory for test outputs
-    $script:tempDir = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath "ReScenePS-Tests-$([guid]::NewGuid().ToString('N').Substring(0,8))"
-    New-Item -Path $script:tempDir -ItemType Directory -Force | Out-Null
+    $script:tempDir = New-TestTempDirectory -Prefix 'ReScenePS-Functional'
 }
 
 AfterAll {
-    # Cleanup temp directory
-    if ($script:tempDir -and (Test-Path -Path $script:tempDir)) {
-        Remove-Item -Path $script:tempDir -Recurse -Force -ErrorAction 'SilentlyContinue'
-    }
+    Remove-TestTempDirectory -Path $script:tempDir
 }
 
 # =============================================================================
@@ -298,20 +293,7 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
 
             $script:extractedSuccessfully = $false
             if ($script:networkRars) {
-                try {
-                    # Use 7z or unrar to extract (7z is more commonly available on Windows)
-                    $sevenZip = Get-Command '7z' -ErrorAction SilentlyContinue
-                    if (-not $sevenZip) {
-                        $sevenZip = Get-Command 'C:\Program Files\7-Zip\7z.exe' -ErrorAction SilentlyContinue
-                    }
-
-                    if ($sevenZip) {
-                        $extractResult = & $sevenZip.Source x $script:networkRars.FullName "-o$($script:sourceDir)" -y 2>&1
-                        $script:extractedSuccessfully = $LASTEXITCODE -eq 0
-                    }
-                } catch {
-                    $script:extractedSuccessfully = $false
-                }
+                $script:extractedSuccessfully = Invoke-UnrarExtract -RarPath $script:networkRars.FullName -OutputPath $script:sourceDir -Overwrite
             }
         }
 
@@ -395,19 +377,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
 
             $script:setupSuccessful = $false
             if ($networkRars) {
-                try {
-                    $sevenZip = Get-Command '7z' -ErrorAction SilentlyContinue
-                    if (-not $sevenZip) {
-                        $sevenZip = Get-Command 'C:\Program Files\7-Zip\7z.exe' -ErrorAction SilentlyContinue
-                    }
-
-                    if ($sevenZip) {
-                        & $sevenZip.Source x $networkRars.FullName "-o$($script:sourceDir)" -y 2>&1 | Out-Null
-                        $script:setupSuccessful = $LASTEXITCODE -eq 0
-                    }
-                } catch {
-                    $script:setupSuccessful = $false
-                }
+                $script:setupSuccessful = Invoke-UnrarExtract -RarPath $networkRars.FullName -OutputPath $script:sourceDir -Overwrite
             }
         }
 
