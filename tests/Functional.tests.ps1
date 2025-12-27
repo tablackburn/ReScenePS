@@ -279,21 +279,32 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
             $script:sourceDir = Join-Path -Path $script:tempDir -ChildPath "source-$safeName"
             New-Item -Path $script:sourceDir -ItemType Directory -Force | Out-Null
 
-            # Find RAR files in network path (check top level, then CD1/CD2 for XviD)
+            # Find RAR files in network path (check top level, then CD1/CD2/etc for multi-disc XviD)
             $script:networkRars = Get-ChildItem -Path $sample.NetworkPath -Filter '*.rar' -ErrorAction SilentlyContinue |
                 Select-Object -First 1
-            if (-not $script:networkRars) {
-                # Check CD1 subdirectory for XviD releases
-                $cd1Path = Join-Path $sample.NetworkPath 'CD1'
-                if (Test-Path $cd1Path) {
-                    $script:networkRars = Get-ChildItem -Path $cd1Path -Filter '*.rar' -ErrorAction SilentlyContinue |
-                        Select-Object -First 1
-                }
-            }
-
             $script:extractedSuccessfully = $false
+
             if ($script:networkRars) {
+                # Single-disc release - extract from top level
                 $script:extractedSuccessfully = Invoke-UnrarExtract -RarPath $script:networkRars.FullName -OutputPath $script:sourceDir -Overwrite
+            } else {
+                # Check for multi-disc release (CD1, CD2, etc.)
+                $cdDirs = Get-ChildItem -Path $sample.NetworkPath -Directory -Filter 'CD*' -ErrorAction SilentlyContinue |
+                    Sort-Object Name
+                if ($cdDirs) {
+                    $script:networkRars = @()
+                    $allExtracted = $true
+                    foreach ($cdDir in $cdDirs) {
+                        $cdRar = Get-ChildItem -Path $cdDir.FullName -Filter '*.rar' -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
+                        if ($cdRar) {
+                            $script:networkRars += $cdRar
+                            $extracted = Invoke-UnrarExtract -RarPath $cdRar.FullName -OutputPath $script:sourceDir -Overwrite
+                            if (-not $extracted) { $allExtracted = $false }
+                        }
+                    }
+                    $script:extractedSuccessfully = $allExtracted -and ($script:networkRars.Count -gt 0)
+                }
             }
         }
 
@@ -379,17 +390,27 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
 
             $networkRars = Get-ChildItem -Path $sample.NetworkPath -Filter '*.rar' -ErrorAction SilentlyContinue |
                 Select-Object -First 1
-            if (-not $networkRars) {
-                $cd1Path = Join-Path $sample.NetworkPath 'CD1'
-                if (Test-Path $cd1Path) {
-                    $networkRars = Get-ChildItem -Path $cd1Path -Filter '*.rar' -ErrorAction SilentlyContinue |
-                        Select-Object -First 1
-                }
-            }
-
             $script:setupSuccessful = $false
+
             if ($networkRars) {
+                # Single-disc release - extract from top level
                 $script:setupSuccessful = Invoke-UnrarExtract -RarPath $networkRars.FullName -OutputPath $script:sourceDir -Overwrite
+            } else {
+                # Check for multi-disc release (CD1, CD2, etc.)
+                $cdDirs = Get-ChildItem -Path $sample.NetworkPath -Directory -Filter 'CD*' -ErrorAction SilentlyContinue |
+                    Sort-Object Name
+                if ($cdDirs) {
+                    $allExtracted = $true
+                    foreach ($cdDir in $cdDirs) {
+                        $cdRar = Get-ChildItem -Path $cdDir.FullName -Filter '*.rar' -ErrorAction SilentlyContinue |
+                            Select-Object -First 1
+                        if ($cdRar) {
+                            $extracted = Invoke-UnrarExtract -RarPath $cdRar.FullName -OutputPath $script:sourceDir -Overwrite
+                            if (-not $extracted) { $allExtracted = $false }
+                        }
+                    }
+                    $script:setupSuccessful = $allExtracted
+                }
             }
         }
 
