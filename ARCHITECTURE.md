@@ -171,6 +171,14 @@ Test infrastructure module providing utilities for test setup:
 - `New-TestTempDirectory` / `Remove-TestTempDirectory` - Test isolation utilities
 - `Test-FileUnicode` / `Get-TextFilesList` - Meta test utilities for encoding validation
 
+**Plex Data Source Functions** (for remote test data):
+- `Test-PlexModuleAvailable` - Check if PlexAutomationToolkit is installed
+- `Get-PlexConnectionInfo` - Get Plex credentials from env vars or stored config
+- `Get-PlexCachePath` / `Get-CachedMediaFile` - Local cache management
+- `Get-PlexSourceFile` - Download source files from Plex (with caching)
+- `Find-PlexItemByRelease` - Match release names to Plex library items
+- `Clear-PlexTestCache` / `Get-PlexTestCacheInfo` - Cache utilities
+
 ### Functional.tests.ps1
 
 End-to-end tests using real SRR/SRS files. Configure test cases in `tests/TestConfig.psd1`:
@@ -179,6 +187,47 @@ End-to-end tests using real SRR/SRS files. Configure test cases in `tests/TestCo
 - Sample reconstruction tests (MKV and AVI formats)
 
 Copy `tests/TestConfig.Example.psd1` to `tests/TestConfig.psd1` and customize paths for your environment.
+
+### Plex Data Source Testing
+
+Reconstruction tests can obtain source files from a Plex server instead of local network shares. This enables running the full test suite anywhere with internet access.
+
+**Setup:**
+1. Install PlexAutomationToolkit: `Install-Module PlexAutomationToolkit`
+2. Connect to Plex: `Connect-PatAccount` and `Add-PatServer -ServerName 'MyPlex' -Default`
+3. Run `.\tests\Initialize-PlexTestCollection.ps1` to create a collection with test releases
+4. Copy generated `PlexSourceMappings` to `TestConfig.psd1`
+5. Set `PlexDataSource.Enabled = $true` in `TestConfig.psd1`
+
+**For CI/CD:**
+Set environment variables instead of stored config:
+- `PAT_SERVER_URI` - Plex server URL (e.g., `https://plex.example.com:32400`)
+- `PAT_TOKEN` - Plex authentication token
+
+**Test Behavior:**
+- Tests try network paths first (existing behavior)
+- If network unavailable, tests fall back to Plex download
+- Downloaded files are cached locally (default: 1 week TTL)
+- Tests skip gracefully if neither source is available
+
+### Public Domain Test Releases
+
+For copyright-free testing, the following public domain films have scene releases available on srrdb.com:
+
+| Film | Year | Status | Example Release |
+|------|------|--------|-----------------|
+| The Kid | 1921 | Pre-1928 US PD | `The.Kid.1921.1080p.BluRay.x264-AVCHD` |
+| Sherlock Jr. | 1924 | Pre-1928 US PD | `Sherlock.Jr.1924.1080p.BluRay.x264-PSYCHD` |
+| Battleship Potemkin | 1925 | Pre-1928 US PD | `Battleship.Potemkin.1925.1080p.BluRay.x264-CiNEFiLE` |
+| Metropolis | 1927 | Pre-1928 US PD | `Metropolis.1927.1080p.BluRay.x264-AVCHD` |
+| Night of the Living Dead | 1968 | Copyright lapsed | `Night.Of.The.Living.Dead.1968.1080p.Bluray.x264-hV` |
+
+**To use public domain releases:**
+1. Download SRR files from `https://www.srrdb.com/browse/<release-name>`
+2. Place SRR files in `tests/samples/`
+3. Add the films to your Plex library (any edition)
+4. Configure `PlexSourceMappings` in `TestConfig.psd1` with your Plex ratingKeys
+5. Run tests - they'll use Plex as the source for these public domain films
 
 ## Binary File Formats
 

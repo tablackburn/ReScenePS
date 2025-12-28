@@ -126,6 +126,15 @@ ReScenePS/
 └── requirements.psd1     # Runtime dependencies
 ```
 
+### Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed documentation on:
+
+- Binary file formats (SRR, SRS, RAR, EBML)
+- Module internals and class structure
+- Reconstruction algorithms
+- Test infrastructure and Plex integration
+
 ## How It Works
 
 ### SRR Reconstruction
