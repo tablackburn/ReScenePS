@@ -247,17 +247,29 @@ function Get-PlexConnectionInfo {
         }
 
         # Ensure PAT configuration directory exists (required for CI runners)
-        # PAT uses $env:LOCALAPPDATA or $env:USERPROFILE/Documents - ensure these exist
-        if (-not $env:LOCALAPPDATA) {
-            # Linux/macOS: set LOCALAPPDATA to a temp location
-            $env:LOCALAPPDATA = Join-Path ([System.IO.Path]::GetTempPath()) 'LocalAppData'
+        # PAT uses $env:OneDrive -> $env:USERPROFILE/Documents -> $env:LOCALAPPDATA
+        # On Linux/macOS, these may not exist - set them to valid temp locations
+        $tempBase = [System.IO.Path]::GetTempPath()
+        if (-not $env:USERPROFILE) {
+            $env:USERPROFILE = $tempBase
         }
-        $patConfigDir = Join-Path $env:LOCALAPPDATA 'PlexAutomationToolkit'
-        if (-not (Test-Path $patConfigDir)) {
-            New-Item -Path $patConfigDir -ItemType Directory -Force | Out-Null
+        if (-not $env:LOCALAPPDATA) {
+            $env:LOCALAPPDATA = Join-Path $tempBase 'LocalAppData'
+        }
+        # Pre-create PAT config directories in all fallback locations
+        $patConfigDirs = @(
+            (Join-Path $env:USERPROFILE 'Documents\PlexAutomationToolkit'),
+            (Join-Path $env:LOCALAPPDATA 'PlexAutomationToolkit')
+        )
+        foreach ($dir in $patConfigDirs) {
+            if (-not (Test-Path $dir)) {
+                New-Item -Path $dir -ItemType Directory -Force | Out-Null
+            }
         }
 
-        Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
+        # Force reimport to pick up new environment variables
+        Remove-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
+        Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue -Force
 
         # Configure PlexAutomationToolkit with env var credentials
         # On fresh CI runners, storage may not be initialized, so wrap in try-catch
