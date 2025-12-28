@@ -7,7 +7,5 @@
             Repository = 'PSGallery'
         }
     }
-    'CRC'           = @{
-        Version = '0.0.2'
-    }
+    # No external runtime dependencies - all CRC32 functionality is now built-in
 }
