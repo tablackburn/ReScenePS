@@ -310,6 +310,8 @@ class RarPackedFileBlock : SrrBlock {
     [bool]$HasLargeFile
     [bool]$HasUtf8Name
     [bool]$HasSalt
+    [bool]$HasExtTime
+    [hashtable]$ExtTime          # Extended time data (mtime, ctime, atime, arctime)
 
     RarPackedFileBlock([BinaryReader]$reader, [long]$position) : base($reader, $position) {
         $offset = 0
@@ -366,8 +368,44 @@ class RarPackedFileBlock : SrrBlock {
             $offset += 8
         }
 
-        # EXT_TIME field parsing would go here if needed (flag 0x1000)
-        # For now, we skip it
+        # EXT_TIME field parsing (flag 0x1000)
+        # Contains extended timestamps: mtime, ctime, atime, arctime
+        $this.HasExtTime = ($this.HeadFlags -band 0x1000) -eq 0x1000
+        if ($this.HasExtTime -and $offset -lt $this.RawData.Length) {
+            $this.ExtTime = @{}
+            # EXT_TIME format: flags (2 bytes) followed by optional time data
+            if ($offset + 2 -le $this.RawData.Length) {
+                $extFlags = [BitConverter]::ToUInt16($this.RawData, $offset)
+                $offset += 2
+
+                # Parse each time field (mtime, ctime, atime, arctime)
+                # Each uses 4 bits: 2 for count, 1 for unix time present, 1 reserved
+                $timeNames = @('mtime', 'ctime', 'atime', 'arctime')
+                for ($i = 0; $i -lt 4; $i++) {
+                    $fieldFlags = ($extFlags -shr (($i) * 4)) -band 0x0F
+                    $count = ($fieldFlags -shr 2) -band 0x03
+                    $hasUnixTime = ($fieldFlags -band 0x01) -ne 0
+
+                    if ($count -gt 0 -or $hasUnixTime) {
+                        $timeData = @{ Flags = $fieldFlags }
+
+                        # Read additional bytes based on count
+                        if ($count -gt 0 -and $offset + $count -le $this.RawData.Length) {
+                            $timeData['ExtraBytes'] = $this.RawData[$offset..($offset + $count - 1)]
+                            $offset += $count
+                        }
+
+                        # Read Unix timestamp if present
+                        if ($hasUnixTime -and $offset + 4 -le $this.RawData.Length) {
+                            $timeData['UnixTime'] = [BitConverter]::ToUInt32($this.RawData, $offset)
+                            $offset += 4
+                        }
+
+                        $this.ExtTime[$timeNames[$i]] = $timeData
+                    }
+                }
+            }
+        }
     }
 
     [byte[]] GetBlockBytes() {
@@ -391,6 +429,109 @@ class RarPackedFileBlock : SrrBlock {
         $offset += 2
 
         # RawData (all the field data after HEAD_SIZE)
+        if ($this.RawData.Length -gt 0) {
+            [Array]::Copy($this.RawData, 0, $blockBytes, $offset, $this.RawData.Length)
+        }
+
+        return $blockBytes
+    }
+}
+
+class RarNewSubBlock : SrrBlock {
+    # 0x7A - New-format subblock (recovery record, comments, authenticity verification)
+    [uint32]$DataSize
+    [uint32]$UnpackedSize
+    [byte]$HostOs
+    [uint32]$DataCrc
+    [uint32]$FileDateTime
+    [byte]$UnpackVersion
+    [byte]$Method
+    [uint16]$NameSize
+    [uint32]$Attributes
+    [string]$SubType        # "RR" = Recovery Record, "CMT" = Comment, "AV" = Authenticity Verification
+
+    RarNewSubBlock([BinaryReader]$reader, [long]$position) : base($reader, $position) {
+        $offset = 0
+
+        # Structure similar to RarPackedFileBlock (25 bytes minimum)
+        if ($this.RawData.Length -ge 25) {
+            $this.DataSize = [BitConverter]::ToUInt32($this.RawData, $offset)
+            $offset += 4
+            $this.UnpackedSize = [BitConverter]::ToUInt32($this.RawData, $offset)
+            $offset += 4
+            $this.HostOs = $this.RawData[$offset]
+            $offset += 1
+            $this.DataCrc = [BitConverter]::ToUInt32($this.RawData, $offset)
+            $offset += 4
+            $this.FileDateTime = [BitConverter]::ToUInt32($this.RawData, $offset)
+            $offset += 4
+            $this.UnpackVersion = $this.RawData[$offset]
+            $offset += 1
+            $this.Method = $this.RawData[$offset]
+            $offset += 1
+            $this.NameSize = [BitConverter]::ToUInt16($this.RawData, $offset)
+            $offset += 2
+            $this.Attributes = [BitConverter]::ToUInt32($this.RawData, $offset)
+            $offset += 4
+        }
+
+        # Read sub-type name (e.g., "RR", "CMT", "AV")
+        if ($this.NameSize -gt 0 -and $offset + $this.NameSize -le $this.RawData.Length) {
+            $this.SubType = [Encoding]::ASCII.GetString($this.RawData, $offset, $this.NameSize)
+            $offset += $this.NameSize
+        }
+    }
+
+    [byte[]] GetBlockBytes() {
+        $blockBytes = New-Object byte[] ($this.HeadSize)
+        $offset = 0
+
+        [BitConverter]::GetBytes([uint16]$this.HeadCrc).CopyTo($blockBytes, $offset)
+        $offset += 2
+        $blockBytes[$offset++] = [byte]$this.HeadType
+        [BitConverter]::GetBytes([uint16]$this.HeadFlags).CopyTo($blockBytes, $offset)
+        $offset += 2
+        [BitConverter]::GetBytes([uint16]$this.HeadSize).CopyTo($blockBytes, $offset)
+        $offset += 2
+
+        if ($this.RawData.Length -gt 0) {
+            [Array]::Copy($this.RawData, 0, $blockBytes, $offset, $this.RawData.Length)
+        }
+
+        return $blockBytes
+    }
+}
+
+class RarOldStyleBlock : SrrBlock {
+    # 0x75-0x79 - Old-style RAR blocks (comment, authenticity, subblock, recovery, authenticity2)
+    # These are rarely used in modern archives but may appear in legacy files
+
+    [string]$BlockTypeName
+
+    RarOldStyleBlock([BinaryReader]$reader, [long]$position) : base($reader, $position) {
+        # Map block type to name for identification
+        $this.BlockTypeName = switch ($this.HeadType) {
+            0x75 { "OldComment" }
+            0x76 { "OldAuthenticity" }
+            0x77 { "OldSubblock" }
+            0x78 { "OldRecovery" }
+            0x79 { "OldAuthenticity2" }
+            default { "Unknown" }
+        }
+    }
+
+    [byte[]] GetBlockBytes() {
+        $blockBytes = New-Object byte[] ($this.HeadSize)
+        $offset = 0
+
+        [BitConverter]::GetBytes([uint16]$this.HeadCrc).CopyTo($blockBytes, $offset)
+        $offset += 2
+        $blockBytes[$offset++] = [byte]$this.HeadType
+        [BitConverter]::GetBytes([uint16]$this.HeadFlags).CopyTo($blockBytes, $offset)
+        $offset += 2
+        [BitConverter]::GetBytes([uint16]$this.HeadSize).CopyTo($blockBytes, $offset)
+        $offset += 2
+
         if ($this.RawData.Length -gt 0) {
             [Array]::Copy($this.RawData, 0, $blockBytes, $offset, $this.RawData.Length)
         }
@@ -511,14 +652,24 @@ class BlockReader {
 
         # Instantiate appropriate block class
         $block = switch ($blockType) {
+            # SRR-specific blocks
             0x69 { [SrrHeaderBlock]::new($this.Reader, $position) }
             0x6A { [SrrStoredFileBlock]::new($this.Reader, $position) }
             0x6B { [SrrBlock]::new($this.Reader, $position) }  # ISDb hash
             0x6C { [SrrBlock]::new($this.Reader, $position) }  # Padding
             0x71 { [SrrRarFileBlock]::new($this.Reader, $position) }
+            # RAR blocks
             0x72 { [RarMarkerBlock]::new($this.Reader, $position) }
             0x73 { [RarVolumeHeaderBlock]::new($this.Reader, $position) }
             0x74 { [RarPackedFileBlock]::new($this.Reader, $position) }
+            # Old-style RAR blocks (legacy support)
+            0x75 { [RarOldStyleBlock]::new($this.Reader, $position) }  # Old comment
+            0x76 { [RarOldStyleBlock]::new($this.Reader, $position) }  # Old authenticity
+            0x77 { [RarOldStyleBlock]::new($this.Reader, $position) }  # Old subblock
+            0x78 { [RarOldStyleBlock]::new($this.Reader, $position) }  # Old recovery
+            0x79 { [RarOldStyleBlock]::new($this.Reader, $position) }  # Old authenticity2
+            # New-style subblock (recovery records, comments, AV)
+            0x7A { [RarNewSubBlock]::new($this.Reader, $position) }
             0x7B { [RarEndArchiveBlock]::new($this.Reader, $position) }
             default { [SrrBlock]::new($this.Reader, $position) }
         }

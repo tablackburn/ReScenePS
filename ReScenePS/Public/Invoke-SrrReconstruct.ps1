@@ -100,7 +100,7 @@ function Invoke-SrrReconstruct {
             $currentVolume = $block.FileName
             $rarVolumes[$currentVolume] = @{ RarFileBlock = $block; Blocks = [System.Collections.Generic.List[Object]]::new() }
         }
-        elseif ($currentVolume -and ($block -is [RarMarkerBlock] -or $block -is [RarVolumeHeaderBlock] -or $block -is [RarPackedFileBlock] -or $block -is [RarEndArchiveBlock])) {
+        elseif ($currentVolume -and ($block -is [RarMarkerBlock] -or $block -is [RarVolumeHeaderBlock] -or $block -is [RarPackedFileBlock] -or $block -is [RarEndArchiveBlock] -or $block -is [RarNewSubBlock] -or $block -is [RarOldStyleBlock])) {
             $rarVolumes[$currentVolume].Blocks.Add($block)
         }
     }
@@ -168,6 +168,17 @@ function Invoke-SrrReconstruct {
                             }
                         }
                     }
+                    elseif ($block -is [RarNewSubBlock]) {
+                        # Write new-style subblock (recovery record, comments, etc.)
+                        $blockBytes = $block.GetBlockBytes()
+                        $rarStream.Write($blockBytes, 0, $blockBytes.Length)
+                        # Note: Subblock data (if any) is not stored in SRR files
+                    }
+                    elseif ($block -is [RarOldStyleBlock]) {
+                        # Write old-style block as-is
+                        $blockBytes = $block.GetBlockBytes()
+                        $rarStream.Write($blockBytes, 0, $blockBytes.Length)
+                    }
                     elseif ($block -is [RarEndArchiveBlock]) {
                         $blockBytes = $block.GetBlockBytes()
                         $rarStream.Write($blockBytes, 0, $blockBytes.Length)
@@ -187,5 +198,7 @@ function Invoke-SrrReconstruct {
     Write-Host ""
     Write-Host "Reconstruction complete!" -ForegroundColor Green
 
-    Test-ReconstructedRar -SrrFile $SrrFile -OutputPath $OutputPath
+    if (-not $SkipValidation) {
+        Test-ReconstructedRar -SrrFile $SrrFile -OutputPath $OutputPath
+    }
 }

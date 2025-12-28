@@ -12,7 +12,7 @@ properties {
     $PSBPreference.Help.DefaultLocale = 'en-US'
     $PSBPreference.Test.OutputFile = 'out/testResults.xml'
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
-    $PSBPreference.Test.CodeCoverage.Enabled = $false  # Disabled until unit tests are added
+    $PSBPreference.Test.CodeCoverage.Enabled = $true
     $PSBPreference.Test.CodeCoverage.Threshold = 0.70  # 70% minimum coverage
 
     # Test tools configuration
