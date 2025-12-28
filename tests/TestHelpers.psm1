@@ -248,6 +248,16 @@ function Get-PlexConnectionInfo {
 
         Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
 
+        # Configure PlexAutomationToolkit with env var credentials
+        # Check if we already have this server configured
+        $existingServer = Get-PatStoredServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
+        if (-not $existingServer -or $existingServer.uri -ne $env:PAT_SERVER_URI) {
+            # Add or update the server configuration
+            Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
+        } else {
+            Set-PatDefaultServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
+        }
+
         return @{
             ServerUri = $env:PAT_SERVER_URI
             Token     = $env:PAT_TOKEN
@@ -312,6 +322,10 @@ function Get-PlexCachePath {
 
     if ($CustomPath) {
         $cachePath = $CustomPath
+    }
+    elseif ($env:RUNNER_TEMP) {
+        # GitHub Actions: use runner temp for consistent caching
+        $cachePath = Join-Path $env:RUNNER_TEMP 'ReScenePS-PlexCache'
     }
     else {
         $cachePath = Join-Path ([System.IO.Path]::GetTempPath()) 'ReScenePS-PlexCache'

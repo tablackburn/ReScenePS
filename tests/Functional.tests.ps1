@@ -72,6 +72,7 @@ BeforeDiscovery {
         $script:testConfig = Import-PowerShellDataFile -Path $configPath
         $script:skipFunctionalTests = $false
 
+
         # Process SRR Parsing Tests - resolve paths
         $script:srrParsingTests = @($script:testConfig.SrrParsingTests | ForEach-Object {
             $test = $_
@@ -112,7 +113,7 @@ BeforeDiscovery {
             }
         }
 
-        # Process SRR Reconstruction Tests - check network accessibility and Plex fallback
+        # Process SRR Reconstruction Tests - check Plex availability
         $script:srrReconstructionTests = @($script:testConfig.SrrReconstructionTests | ForEach-Object {
             $test = $_
             $srrPath = if ($test.RelativeTo -eq 'ProjectRoot') {
@@ -127,34 +128,21 @@ BeforeDiscovery {
                 return
             }
 
-            # Check if network path is accessible
-            $networkAccessible = $false
-            if ($test.NetworkPath) {
-                try {
-                    $networkAccessible = Test-Path -Path $test.NetworkPath -ErrorAction Stop
-                } catch {
-                    $networkAccessible = $false
-                }
-            }
-
             # Check if Plex mapping exists for this release
             $srrFileName = Split-Path -Leaf $test.SrrPath
             $hasPlexMapping = $script:plexEnabled -and $script:plexMappings.ContainsKey($srrFileName)
 
-            # Include test if network is accessible OR Plex mapping exists
-            if ($networkAccessible -or $hasPlexMapping) {
+            # Include test only if Plex mapping exists
+            if ($hasPlexMapping) {
                 @{
                     Name            = $test.ReleaseName
                     SrrPath         = $srrPath
                     SrrFileName     = $srrFileName
                     ReleaseType     = $test.ReleaseType
-                    NetworkPath     = $test.NetworkPath
-                    NetworkAccessible = $networkAccessible
-                    HasPlexMapping  = $hasPlexMapping
-                    PlexMapping     = if ($hasPlexMapping) { $script:plexMappings[$srrFileName] } else { $null }
+                    PlexMapping     = $script:plexMappings[$srrFileName]
                 }
             } else {
-                # Neither network nor Plex available - will be skipped
+                # No Plex mapping - will be skipped
                 $null
             }
         } | Where-Object { $_ -ne $null })
@@ -309,98 +297,61 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
             New-Item -Path $script:sourceDir -ItemType Directory -Force | Out-Null
 
             $script:extractedSuccessfully = $false
-            $script:sourceMethod = 'None'
-            $script:networkRars = $null
 
-            # Try network path first (existing behavior)
-            if ($sample.NetworkAccessible -and $sample.NetworkPath) {
-                # Find RAR files in network path (check top level, then CD1/CD2/etc for multi-disc XviD)
-                $script:networkRars = Get-ChildItem -Path $sample.NetworkPath -Filter '*.rar' -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
-
-                if ($script:networkRars) {
-                    # Single-disc release - extract from top level
-                    $script:extractedSuccessfully = Invoke-UnrarExtract -RarPath $script:networkRars.FullName -OutputPath $script:sourceDir -Overwrite
-                    if ($script:extractedSuccessfully) {
-                        $script:sourceMethod = 'Network'
-                    }
+            # Download source file from Plex
+            try {
+                # Get Plex cache settings from config
+                $cachePath = if ($script:plexConfig.CachePath) {
+                    Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
                 } else {
-                    # Check for multi-disc release (CD1, CD2, etc.)
-                    $cdDirs = Get-ChildItem -Path $sample.NetworkPath -Directory -Filter 'CD*' -ErrorAction SilentlyContinue |
-                        Sort-Object Name
-                    if ($cdDirs) {
-                        $script:networkRars = @()
-                        $allExtracted = $true
-                        foreach ($cdDir in $cdDirs) {
-                            $cdRar = Get-ChildItem -Path $cdDir.FullName -Filter '*.rar' -ErrorAction SilentlyContinue |
-                                Select-Object -First 1
-                            if ($cdRar) {
-                                $script:networkRars += $cdRar
-                                $extracted = Invoke-UnrarExtract -RarPath $cdRar.FullName -OutputPath $script:sourceDir -Overwrite
-                                if (-not $extracted) { $allExtracted = $false }
-                            }
-                        }
-                        $script:extractedSuccessfully = $allExtracted -and ($script:networkRars.Count -gt 0)
-                        if ($script:extractedSuccessfully) {
-                            $script:sourceMethod = 'Network'
-                        }
+                    Get-PlexCachePath
+                }
+                $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
+                    $script:plexConfig.CacheTtlHours
+                } else {
+                    168
+                }
+
+                $sourceFile = Get-PlexSourceFile `
+                    -ReleaseName $sample.Name `
+                    -Mapping $sample.PlexMapping `
+                    -CachePath $cachePath `
+                    -CacheTtlHours $cacheTtl `
+                    -CollectionName $script:plexConfig.CollectionName `
+                    -LibraryName $script:plexConfig.LibraryName
+
+                if ($sourceFile -and (Test-Path $sourceFile)) {
+                    # Get the expected source filename from the SRR
+                    $srrBlocks = Get-SrrBlock -SrrFile $sample.SrrPath
+                    $packedFiles = $srrBlocks | Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' }
+                    # Find the main content file (largest file, typically .mkv or .avi)
+                    $mainFile = $packedFiles |
+                        Where-Object { $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
+                        Sort-Object -Property UnpackedSize -Descending |
+                        Select-Object -First 1
+
+                    if ($mainFile) {
+                        $expectedName = $mainFile.FileName
+                        $destPath = Join-Path $script:sourceDir $expectedName
+                        Copy-Item -Path $sourceFile -Destination $destPath -Force
+                    } else {
+                        # Fallback: just copy with original name
+                        Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
                     }
+                    $script:extractedSuccessfully = $true
                 }
             }
-
-            # Fall back to Plex if network failed and Plex mapping exists
-            if (-not $script:extractedSuccessfully -and $sample.HasPlexMapping) {
-                try {
-                    # Get Plex cache settings from config
-                    $cachePath = if ($script:plexConfig.CachePath) {
-                        Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
-                    } else {
-                        Get-PlexCachePath
-                    }
-                    $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
-                        $script:plexConfig.CacheTtlHours
-                    } else {
-                        168
-                    }
-
-                    $sourceFile = Get-PlexSourceFile `
-                        -ReleaseName $sample.Name `
-                        -Mapping $sample.PlexMapping `
-                        -CachePath $cachePath `
-                        -CacheTtlHours $cacheTtl `
-                        -CollectionName $script:plexConfig.CollectionName `
-                        -LibraryName $script:plexConfig.LibraryName
-
-                    if ($sourceFile -and (Test-Path $sourceFile)) {
-                        # Copy to source directory
-                        Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
-                        $script:extractedSuccessfully = $true
-                        $script:sourceMethod = 'Plex'
-                    }
-                }
-                catch {
-                    Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
-                }
+            catch {
+                Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
             }
         }
 
         It 'Source files obtained' {
             if (-not $script:extractedSuccessfully) {
-                $reasons = @()
-                if ($sample.NetworkPath -and -not $sample.NetworkAccessible) {
-                    $reasons += "Network path not accessible"
-                }
-                if ($sample.HasPlexMapping) {
-                    $reasons += "Plex download failed"
-                }
-                if ($reasons.Count -eq 0) {
-                    $reasons += "No source available"
-                }
-                Set-ItResult -Skipped -Because ($reasons -join '; ')
+                Set-ItResult -Skipped -Because "Plex download failed"
                 return
             }
             $script:extractedSuccessfully | Should -Be $true
-            Write-Verbose "Source obtained via: $script:sourceMethod"
         }
 
         It 'Reconstructs RAR volumes successfully' {
@@ -463,83 +414,61 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
             $script:workSrrPath = Join-Path -Path $script:testWorkDir -ChildPath (Split-Path -Leaf $sample.SrrPath)
             Copy-Item -Path $sample.SrrPath -Destination $script:workSrrPath
 
-            # Extract source files
+            # Download source files from Plex
             $script:sourceDir = Join-Path -Path $script:testWorkDir -ChildPath 'source'
             New-Item -Path $script:sourceDir -ItemType Directory -Force | Out-Null
 
             $script:setupSuccessful = $false
-            $script:sourceMethod = 'None'
 
-            # Try network path first
-            if ($sample.NetworkAccessible -and $sample.NetworkPath) {
-                $networkRars = Get-ChildItem -Path $sample.NetworkPath -Filter '*.rar' -ErrorAction SilentlyContinue |
-                    Select-Object -First 1
-
-                if ($networkRars) {
-                    # Single-disc release - extract from top level
-                    $script:setupSuccessful = Invoke-UnrarExtract -RarPath $networkRars.FullName -OutputPath $script:sourceDir -Overwrite
-                    if ($script:setupSuccessful) {
-                        $script:sourceMethod = 'Network'
-                    }
+            try {
+                $cachePath = if ($script:plexConfig.CachePath) {
+                    Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
                 } else {
-                    # Check for multi-disc release (CD1, CD2, etc.)
-                    $cdDirs = Get-ChildItem -Path $sample.NetworkPath -Directory -Filter 'CD*' -ErrorAction SilentlyContinue |
-                        Sort-Object Name
-                    if ($cdDirs) {
-                        $allExtracted = $true
-                        foreach ($cdDir in $cdDirs) {
-                            $cdRar = Get-ChildItem -Path $cdDir.FullName -Filter '*.rar' -ErrorAction SilentlyContinue |
-                                Select-Object -First 1
-                            if ($cdRar) {
-                                $extracted = Invoke-UnrarExtract -RarPath $cdRar.FullName -OutputPath $script:sourceDir -Overwrite
-                                if (-not $extracted) { $allExtracted = $false }
-                            }
-                        }
-                        $script:setupSuccessful = $allExtracted
-                        if ($script:setupSuccessful) {
-                            $script:sourceMethod = 'Network'
-                        }
+                    Get-PlexCachePath
+                }
+                $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
+                    $script:plexConfig.CacheTtlHours
+                } else {
+                    168
+                }
+
+                $sourceFile = Get-PlexSourceFile `
+                    -ReleaseName $sample.Name `
+                    -Mapping $sample.PlexMapping `
+                    -CachePath $cachePath `
+                    -CacheTtlHours $cacheTtl `
+                    -CollectionName $script:plexConfig.CollectionName `
+                    -LibraryName $script:plexConfig.LibraryName
+
+                if ($sourceFile -and (Test-Path $sourceFile)) {
+                    # Get the expected source filename from the SRR
+                    $srrBlocks = Get-SrrBlock -SrrFile $sample.SrrPath
+                    $packedFiles = $srrBlocks | Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' }
+                    # Find the main content file (largest file, typically .mkv or .avi)
+                    $mainFile = $packedFiles |
+                        Where-Object { $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
+                        Sort-Object -Property UnpackedSize -Descending |
+                        Select-Object -First 1
+
+                    if ($mainFile) {
+                        $expectedName = $mainFile.FileName
+                        $destPath = Join-Path $script:sourceDir $expectedName
+                        Copy-Item -Path $sourceFile -Destination $destPath -Force
+                    } else {
+                        # Fallback: just copy with original name
+                        Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
                     }
+                    $script:setupSuccessful = $true
                 }
             }
-
-            # Fall back to Plex if network failed and Plex mapping exists
-            if (-not $script:setupSuccessful -and $sample.HasPlexMapping) {
-                try {
-                    $cachePath = if ($script:plexConfig.CachePath) {
-                        Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
-                    } else {
-                        Get-PlexCachePath
-                    }
-                    $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
-                        $script:plexConfig.CacheTtlHours
-                    } else {
-                        168
-                    }
-
-                    $sourceFile = Get-PlexSourceFile `
-                        -ReleaseName $sample.Name `
-                        -Mapping $sample.PlexMapping `
-                        -CachePath $cachePath `
-                        -CacheTtlHours $cacheTtl `
-                        -CollectionName $script:plexConfig.CollectionName `
-                        -LibraryName $script:plexConfig.LibraryName
-
-                    if ($sourceFile -and (Test-Path $sourceFile)) {
-                        Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
-                        $script:setupSuccessful = $true
-                        $script:sourceMethod = 'Plex'
-                    }
-                }
-                catch {
-                    Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
-                }
+            catch {
+                Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
             }
         }
 
         It 'Setup completed successfully' {
             if (-not $script:setupSuccessful) {
-                Set-ItResult -Skipped -Because 'No source available (network inaccessible and Plex failed)'
+                Set-ItResult -Skipped -Because 'Plex download failed'
                 return
             }
             $script:setupSuccessful | Should -Be $true

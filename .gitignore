@@ -9,11 +9,12 @@ testResults.xml
 codeCoverage.xml
 out/
 
-# Local test configuration (contains machine-specific paths)
-tests/TestConfig.psd1
 
-# Downloaded test samples
-tests/samples/
+# Downloaded test samples (media files, not SRR files which are tracked)
+tests/samples/*.mkv
+tests/samples/*.avi
+tests/samples/*.rar
+tests/samples/*.mp4
 
 # IDE
 .idea/

@@ -25,4 +25,7 @@
     'PSScriptAnalyzer' = @{
         Version = '1.24.0'
     }
+    'PlexAutomationToolkit' = @{
+        Version = '0.6.3'
+    }
 }

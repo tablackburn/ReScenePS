@@ -8,6 +8,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
+    env:
+      PAT_SERVER_URI: ${{ secrets.PAT_SERVER_URI }}
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
     - uses: actions/checkout@v4
     - name: Test
