@@ -38,6 +38,19 @@ Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)'
         return
     }
 
+    # Check if 7-Zip is available (common on CI runners)
+    $sevenZip = Get-Command '7z' -ErrorAction SilentlyContinue
+    if (-not $sevenZip) {
+        $sevenZipPaths = @(
+            'C:\Program Files\7-Zip\7z.exe',
+            'C:\Program Files (x86)\7-Zip\7z.exe'
+        )
+        $sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    else {
+        $sevenZip = $sevenZip.Source
+    }
+
     if (-not (Test-Path -Path $script:ToolsPath)) {
         New-Item -Path $script:ToolsPath -ItemType Directory -Force | Out-Null
         Write-Host "Created tools directory: $script:ToolsPath"
@@ -50,11 +63,37 @@ Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)'
             $sfxPath = Join-Path -Path $script:ToolsPath -ChildPath 'unrarw64.exe'
             Invoke-WebRequest -Uri $script:UnrarSfxUrl -OutFile $sfxPath -UseBasicParsing
 
-            # Extract silently using the SFX's built-in extraction
-            # RAR SFX archives support -d<path> for destination directory
-            Write-Host "Extracting UnRAR silently to $script:ToolsPath..."
-            $extractArgs = "-d`"$script:ToolsPath`""
-            $extractProcess = Start-Process -FilePath $sfxPath -ArgumentList $extractArgs -Wait -PassThru -WindowStyle Hidden
+            # Try to extract using 7-Zip first (reliable on CI)
+            if ($sevenZip -and (Test-Path $sevenZip)) {
+                Write-Host "Extracting UnRAR using 7-Zip..."
+                $extractResult = & $sevenZip x $sfxPath "-o$($script:ToolsPath)" -y 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "7-Zip extraction returned: $extractResult"
+                }
+            }
+            else {
+                # Fallback: try running the SFX with timeout (might show GUI on Windows)
+                Write-Host "Extracting UnRAR silently to $script:ToolsPath..."
+                Write-Host "(Note: If this hangs, install 7-Zip or WinRAR)"
+                $extractArgs = "-d`"$script:ToolsPath`""
+
+                # Use a job with timeout to prevent hanging on GUI dialogs
+                $job = Start-Job -ScriptBlock {
+                    param($sfx, $args)
+                    Start-Process -FilePath $sfx -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
+                } -ArgumentList $sfxPath, $extractArgs
+
+                $completed = Wait-Job -Job $job -Timeout 30
+                if (-not $completed) {
+                    Write-Warning "UnRAR extraction timed out (GUI installer may need manual interaction)"
+                    Stop-Job -Job $job
+                    Remove-Job -Job $job -Force
+                }
+                else {
+                    $result = Receive-Job -Job $job
+                    Remove-Job -Job $job
+                }
+            }
 
             # Remove the SFX after extraction
             Remove-Item -Path $sfxPath -Force -ErrorAction SilentlyContinue
@@ -70,6 +109,7 @@ Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)'
                 }
                 else {
                     Write-Warning "UnRAR extraction may have failed - UnRAR.exe not found in tools directory"
+                    Write-Warning "Some functional tests will be skipped."
                 }
             }
         }
