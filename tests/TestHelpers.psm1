@@ -249,13 +249,18 @@ function Get-PlexConnectionInfo {
         Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
 
         # Configure PlexAutomationToolkit with env var credentials
-        # Check if we already have this server configured
-        $existingServer = Get-PatStoredServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
-        if (-not $existingServer -or $existingServer.uri -ne $env:PAT_SERVER_URI) {
-            # Add or update the server configuration
+        # On fresh CI runners, storage may not be initialized, so wrap in try-catch
+        try {
+            $existingServer = Get-PatStoredServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
+            if (-not $existingServer -or $existingServer.uri -ne $env:PAT_SERVER_URI) {
+                Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
+            } else {
+                Set-PatDefaultServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
+            }
+        }
+        catch {
+            # Storage not initialized - just add the server directly
             Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
-        } else {
-            Set-PatDefaultServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
         }
 
         return @{
