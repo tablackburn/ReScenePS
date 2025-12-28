@@ -246,6 +246,17 @@ function Get-PlexConnectionInfo {
             return $null
         }
 
+        # Ensure PAT configuration directory exists (required for CI runners)
+        # PAT uses $env:LOCALAPPDATA or $env:USERPROFILE/Documents - ensure these exist
+        if (-not $env:LOCALAPPDATA) {
+            # Linux/macOS: set LOCALAPPDATA to a temp location
+            $env:LOCALAPPDATA = Join-Path ([System.IO.Path]::GetTempPath()) 'LocalAppData'
+        }
+        $patConfigDir = Join-Path $env:LOCALAPPDATA 'PlexAutomationToolkit'
+        if (-not (Test-Path $patConfigDir)) {
+            New-Item -Path $patConfigDir -ItemType Directory -Force | Out-Null
+        }
+
         Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
 
         # Configure PlexAutomationToolkit with env var credentials
