@@ -24,6 +24,10 @@ properties {
 
 Task -Name 'Default' -Depends 'Test'
 
+# Override PowerShellBuild's Pester dependency to include DownloadTestTools
+# This ensures UnRAR is available before running tests
+$PSBPesterDependency = @('Build', 'DownloadTestTools')
+
 Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)' {
     # First check if UnRAR is already available in common locations
     $existingUnrar = @(
@@ -123,4 +127,5 @@ Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)'
     }
 }
 
-Task -Name 'Test' -FromModule 'PowerShellBuild' -MinimumVersion '0.7.3' -Depends 'DownloadTestTools'
+# Import the Test task from PowerShellBuild (uses $PSBTestDependency which includes Pester and Analyze)
+Task -Name 'Test' -FromModule 'PowerShellBuild' -MinimumVersion '0.7.3'
