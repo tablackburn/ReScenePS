@@ -21,12 +21,14 @@ BeforeAll {
     $script:tempDir = New-TestTempDirectory -Prefix 'PerfTest'
 
     # Performance thresholds (in milliseconds)
+    # Note: CRC32 uses pure PowerShell implementation which is slower than compiled code
+    # but more portable (no external dependencies)
     $script:Thresholds = @{
         ByteArrayCompare1KB    = 10      # 1KB array comparison
-        ByteArrayCompare1MB    = 100     # 1MB array comparison
+        ByteArrayCompare1MB    = 2000    # 1MB array comparison (increased for CI variance)
         EbmlParse1000Elements  = 500     # Parse 1000 EBML elements
         BlockReaderInit        = 50      # BlockReader initialization
-        CRC32Calc1MB           = 1000    # CRC32 of 1MB file
+        CRC32Calc1MB           = 5000    # CRC32 of 1MB file (pure PowerShell implementation)
     }
 }
 

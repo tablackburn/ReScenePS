@@ -100,7 +100,9 @@ Describe 'Find-SourceFile' {
 
         It 'Returns null when directory does not exist' {
             InModuleScope 'ReScenePS' {
-                $result = Find-SourceFile -FileName 'test.mkv' -SearchPath 'C:\NonExistent\Path\12345'
+                # Use a cross-platform nonexistent path
+                $nonExistentPath = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_ReScenePS_Test_12345'
+                $result = Find-SourceFile -FileName 'test.mkv' -SearchPath $nonExistentPath
                 $result | Should -BeNullOrEmpty
             }
         }
