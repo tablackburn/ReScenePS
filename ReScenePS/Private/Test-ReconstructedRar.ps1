@@ -48,15 +48,14 @@ function Test-ReconstructedRar {
             }
 
             $expectedCrc = $sfvData[$rarFile]
-            $actualCrc = (CRC\Get-CRC32 -Path $rarPath).Hash
-            $actualCrcInt = [Convert]::ToUInt32($actualCrc, 16)
+            $actualCrc = Get-Crc32 -FilePath $rarPath
 
-            if ($actualCrcInt -eq $expectedCrc) {
+            if ($actualCrc -eq $expectedCrc) {
                 Write-Host "    [OK] $rarFile" -ForegroundColor Green
                 $validCount++
             }
             else {
-                Write-Host ("    [X] $rarFile - CRC mismatch: Expected 0x{0:X8}, got 0x{1:X8}" -f $expectedCrc, $actualCrcInt) -ForegroundColor Red
+                Write-Host ("    [X] $rarFile - CRC mismatch: Expected 0x{0:X8}, got 0x{1:X8}" -f $expectedCrc, $actualCrc) -ForegroundColor Red
                 $allValid = $false
                 $failCount++
             }
