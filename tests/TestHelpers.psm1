@@ -429,6 +429,66 @@ function Get-CachedMediaFile {
     return $null
 }
 
+function Remove-CachedMediaFile {
+    <#
+    .SYNOPSIS
+    Removes a specific cached media file by RatingKey.
+
+    .DESCRIPTION
+    Surgically removes a single cached file and updates metadata.
+    Useful for freeing disk space in CI environments after processing.
+
+    .PARAMETER RatingKey
+    The Plex rating key for the media item to remove.
+
+    .PARAMETER CachePath
+    Path to the cache directory.
+
+    .OUTPUTS
+    [bool] True if file was removed, false otherwise
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$RatingKey,
+
+        [Parameter(Mandatory)]
+        [string]$CachePath
+    )
+
+    $metadataPath = Join-Path $CachePath 'metadata.json'
+    if (-not (Test-Path $metadataPath)) {
+        return $false
+    }
+
+    try {
+        $metadata = Get-Content $metadataPath -Raw | ConvertFrom-Json -AsHashtable
+        $cacheKey = "rk_$RatingKey"
+
+        if ($metadata.items -and $metadata.items.ContainsKey($cacheKey)) {
+            $entry = $metadata.items[$cacheKey]
+
+            # Remove the actual file and its parent directory
+            if ($entry.LocalPath -and (Test-Path $entry.LocalPath)) {
+                $parentDir = Split-Path -Parent $entry.LocalPath
+                Remove-Item -Path $parentDir -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Verbose "Removed cached file: $($entry.LocalPath)"
+            }
+
+            # Update metadata
+            $metadata.items.Remove($cacheKey)
+            $metadata | ConvertTo-Json -Depth 10 | Set-Content $metadataPath -Encoding UTF8
+
+            return $true
+        }
+    }
+    catch {
+        Write-Warning "Error removing cached file for RatingKey $RatingKey`: $_"
+    }
+
+    return $false
+}
+
 function Invoke-PlexMediaDownload {
     <#
     .SYNOPSIS
@@ -787,6 +847,7 @@ Export-ModuleMember -Function @(
     'Test-PlexConnectionAvailable'
     'Get-PlexCachePath'
     'Get-CachedMediaFile'
+    'Remove-CachedMediaFile'
     'Invoke-PlexMediaDownload'
     'Find-PlexItemByRelease'
     'Get-PlexSourceFile'

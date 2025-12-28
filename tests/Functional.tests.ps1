@@ -386,12 +386,18 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
         }
 
         AfterAll {
-            # Cleanup
+            # Cleanup local directories
             if ($script:testOutputDir -and (Test-Path -Path $script:testOutputDir)) {
                 Remove-Item -Path $script:testOutputDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
             if ($script:sourceDir -and (Test-Path -Path $script:sourceDir)) {
                 Remove-Item -Path $script:sourceDir -Recurse -Force -ErrorAction 'SilentlyContinue'
+            }
+
+            # Clean up cached source file to free disk space (important for CI)
+            if ($sample.PlexMapping -and $sample.PlexMapping.RatingKey) {
+                $cachePath = Get-PlexCachePath
+                Remove-CachedMediaFile -RatingKey $sample.PlexMapping.RatingKey -CachePath $cachePath | Out-Null
             }
         }
     }
@@ -505,6 +511,12 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
         AfterAll {
             if ($script:testWorkDir -and (Test-Path -Path $script:testWorkDir)) {
                 Remove-Item -Path $script:testWorkDir -Recurse -Force -ErrorAction 'SilentlyContinue'
+            }
+
+            # Clean up cached source file to free disk space (important for CI)
+            if ($sample.PlexMapping -and $sample.PlexMapping.RatingKey) {
+                $cachePath = Get-PlexCachePath
+                Remove-CachedMediaFile -RatingKey $sample.PlexMapping.RatingKey -CachePath $cachePath | Out-Null
             }
         }
     }

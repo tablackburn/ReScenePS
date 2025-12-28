@@ -16,6 +16,18 @@ jobs:
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
     - uses: actions/checkout@v4
+    - name: Free Disk Space (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        # Remove large preinstalled packages to free disk space for video downloads
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h
+    - name: Free Disk Space (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # Remove Xcode simulators and other large items
+        sudo rm -rf ~/Library/Developer/CoreSimulator/Devices/* 2>/dev/null || true
+        df -h
     - name: Test
       shell: pwsh
       run: ./build.ps1 -Task Test -Bootstrap

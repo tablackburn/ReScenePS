@@ -174,32 +174,13 @@
     # RAR RECONSTRUCTION TESTS
     # These test Invoke-SrrReconstruct and Invoke-SrrRestore
     # Requires: SRR file + source content (downloaded from Plex via PlexSourceMappings)
+    #
+    # NOTE: For CI, we use only the smallest release to conserve disk space.
+    # DVDRip XviD (~350MB) is much smaller than BluRay HD releases (6-12GB).
+    # Local testing can use TestConfig.Local.psd1 to test additional releases.
     # ==========================================================================
     SrrReconstructionTests = @(
-        @{
-            ReleaseName      = '007.For.Your.Eyes.Only.1981.720p.BluRay.x264-HANGOVER'
-            SrrPath          = 'tests\samples\007.For.Your.Eyes.Only.1981.720p.BluRay.x264-HANGOVER.srr'
-            RelativeTo       = 'ProjectRoot'
-            ReleaseType      = 'Movie-720p-x264'
-        }
-        @{
-            ReleaseName      = '009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa'
-            SrrPath          = 'tests\samples\009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa.srr'
-            RelativeTo       = 'ProjectRoot'
-            ReleaseType      = 'Movie-1080p-x264'
-        }
-        @{
-            ReleaseName      = 'Game.of.Thrones.S01E01.720p.BluRay.X264-REWARD'
-            SrrPath          = 'tests\samples\Game.of.Thrones.S01E01.720p.BluRay.X264-REWARD.srr'
-            RelativeTo       = 'ProjectRoot'
-            ReleaseType      = 'TV-720p-x264'
-        }
-        @{
-            ReleaseName      = 'Game.Of.Thrones.S01E01.1080p.BluRay.x264-HD4U'
-            SrrPath          = 'tests\samples\Game.Of.Thrones.S01E01.1080p.BluRay.x264-HD4U.srr'
-            RelativeTo       = 'ProjectRoot'
-            ReleaseType      = 'TV-1080p-x264'
-        }
+        # Smallest release - DVDRip XviD (~350MB vs 6-12GB for BluRay)
         @{
             ReleaseName      = '24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE'
             SrrPath          = 'tests\samples\24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE.srr'
