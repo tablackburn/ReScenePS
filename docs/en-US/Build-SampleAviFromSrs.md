@@ -35,6 +35,8 @@ Injects frame data from the source file at the correct offsets
 Build-SampleAviFromSrs -SrsData $srsBytes -SourcePath "movie.avi" -OutputPath "sample.avi"
 ```
 
+Reconstructs the AVI sample file from the SRS metadata and source video.
+
 ## PARAMETERS
 
 ### -SrsData

@@ -32,6 +32,8 @@ NOTE: This is a legacy function - use Export-MkvTrackData for MKV files.
 Export-SampleTrackData -MainFilePath "movie.mkv" -MatchOffset 12345678 -DataLength 5000000 -OutputPath "track1.dat"
 ```
 
+Extracts 5MB of track data starting at the specified offset from the source MKV file.
+
 ## PARAMETERS
 
 ### -MainFilePath

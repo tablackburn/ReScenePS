@@ -35,8 +35,12 @@ function Restore-SrsVideo {
     .EXAMPLE
         Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "movie.mkv" -OutputPath "sample.mkv"
 
+        Reconstructs the sample MKV video from the SRS metadata and source movie file.
+
     .EXAMPLE
         Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "movie.avi" -OutputPath "sample.avi"
+
+        Reconstructs the sample AVI video from the SRS metadata and source movie file.
 
     .NOTES
         Uses match_offset from SRS metadata to extract ONLY the sample portion

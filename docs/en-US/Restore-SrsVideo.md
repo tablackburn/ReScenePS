@@ -37,6 +37,8 @@ Rebuilds the sample MKV by combining SRS structure with extracted track data
 Restore-SrsVideo -SrsFilePath "sample.srs" -SourceMkvPath "movie.mkv" -OutputMkvPath "sample.mkv"
 ```
 
+Reconstructs the sample MKV video from the SRS metadata and source movie file.
+
 ## PARAMETERS
 
 ### -SrsFilePath

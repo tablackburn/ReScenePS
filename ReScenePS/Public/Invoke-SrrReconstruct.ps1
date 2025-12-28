@@ -26,6 +26,8 @@ function Invoke-SrrReconstruct {
 
     .EXAMPLE
         Invoke-SrrReconstruct -SrrFile "release.srr" -SourcePath "." -OutputPath "./output"
+
+        Reconstructs RAR archives from the SRR file using source files in the current directory.
     #>
     [CmdletBinding()]
     param(

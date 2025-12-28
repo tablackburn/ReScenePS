@@ -32,14 +32,16 @@ It performs:
 ### EXAMPLE 1
 ```
 Invoke-SrrRestore
-# Simplest usage - auto-detects SRR, sources in CWD, outputs to CWD
 ```
+
+Auto-detects the SRR file and source files in the current directory and performs a complete restoration.
 
 ### EXAMPLE 2
 ```
 Invoke-SrrRestore -SrrFile "Release.srr" -KeepSrr
-# Specify SRR explicitly and keep it after restoration
 ```
+
+Specifies the SRR file explicitly and preserves it after successful restoration.
 
 ## PARAMETERS
 

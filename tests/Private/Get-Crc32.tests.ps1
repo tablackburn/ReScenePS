@@ -15,15 +15,13 @@ BeforeAll {
 
     $script:tempDir = New-TestTempDirectory -Prefix 'Crc32Test'
 
-    # Check if CRC module is available
-    $script:crcModuleAvailable = $null -ne (Get-Module -Name CRC -ListAvailable)
 }
 
 AfterAll {
     Remove-TestTempDirectory -Path $script:tempDir
 }
 
-Describe 'Get-Crc32' -Skip:(-not $script:crcModuleAvailable) {
+Describe 'Get-Crc32' {
 
     BeforeAll {
         # Create test file with known content
@@ -82,7 +80,8 @@ Describe 'Get-Crc32' -Skip:(-not $script:crcModuleAvailable) {
         It 'Returns correct CRC32 for known content' {
             InModuleScope 'ReScenePS' -Parameters @{ file = $script:knownFile } {
                 $result = Get-Crc32 -FilePath $file
-                $result | Should -Be 0xD87F7E0C
+                # "test" has CRC32 of 0xD87F7E0C = 3632233996 (unsigned)
+                $result | Should -Be 3632233996
             }
         }
     }

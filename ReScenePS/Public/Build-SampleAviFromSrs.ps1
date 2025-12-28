@@ -22,6 +22,8 @@ function Build-SampleAviFromSrs {
     .EXAMPLE
         Build-SampleAviFromSrs -SrsData $srsBytes -SourcePath "movie.avi" -OutputPath "sample.avi"
 
+        Reconstructs the AVI sample file from the SRS metadata and source video.
+
     .OUTPUTS
         System.Boolean
         Returns $true if reconstruction was successful.

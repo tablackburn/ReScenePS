@@ -37,6 +37,8 @@ For all other elements: copy header + content directly
 Build-SampleMkvFromSrs -SrsFilePath "sample.srs" -TrackDataFiles @{1="track1.dat"; 2="track2.dat"} -OutputMkvPath "sample.mkv"
 ```
 
+Reconstructs the MKV sample by combining the SRS structure with pre-extracted track data files.
+
 ## PARAMETERS
 
 ### -SrsFilePath

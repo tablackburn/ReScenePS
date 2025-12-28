@@ -133,7 +133,7 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
         }
     }
 
-    Context 'CRC32 Performance' -Skip:(-not (Get-Module -Name CRC -ListAvailable)) {
+    Context 'CRC32 Performance' {
         BeforeAll {
             # Create test file for CRC benchmarks
             $script:crcTestFile = Join-Path $script:tempDir 'crctest.bin'

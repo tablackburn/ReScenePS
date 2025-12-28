@@ -33,6 +33,8 @@ Copying file data from source files
 Invoke-SrrReconstruct -SrrFile "release.srr" -SourcePath "." -OutputPath "./output"
 ```
 
+Reconstructs RAR archives from the SRR file using source files in the current directory.
+
 ## PARAMETERS
 
 ### -SrrFile

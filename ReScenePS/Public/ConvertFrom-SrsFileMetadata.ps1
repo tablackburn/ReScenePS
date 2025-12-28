@@ -17,6 +17,8 @@ function ConvertFrom-SrsFileMetadata {
         $metadata = ConvertFrom-SrsFileMetadata -SrsFilePath "sample.srs"
         $metadata.Tracks | ForEach-Object { "Track $($_.TrackNumber): offset $($_.MatchOffset)" }
 
+        Parses the SRS file and displays the match offset for each track.
+
     .OUTPUTS
         Hashtable with keys: FileData, Tracks (array), SrsSize
     #>
