@@ -27,6 +27,10 @@ function Invoke-SrrRestore {
     .PARAMETER KeepSources
         If specified, do not delete source files (e.g., .mkv) after successful restoration.
 
+    .PARAMETER SkipValidation
+        Skip CRC validation against embedded SFV. Use when source files differ from original
+        scene release (e.g., when using Plex or other media server sources for testing).
+
     .EXAMPLE
         Invoke-SrrRestore
 
@@ -52,7 +56,10 @@ function Invoke-SrrRestore {
         [switch]$KeepSrr,
 
         [Parameter()]
-        [switch]$KeepSources
+        [switch]$KeepSources,
+
+        [Parameter()]
+        [switch]$SkipValidation
     )
 
     Write-Host ""
@@ -398,6 +405,10 @@ function Invoke-SrrRestore {
         # Respect -WhatIf: skip validation to avoid temp file writes, but allow cleanup preview
         if ($WhatIfPreference) {
             Write-Host "  Skipping validation under -WhatIf (no temp files written)" -ForegroundColor Gray
+            $script:validationPassed = $true
+        }
+        elseif ($SkipValidation) {
+            Write-Host "  Skipping validation (-SkipValidation specified)" -ForegroundColor Yellow
             $script:validationPassed = $true
         }
         else {

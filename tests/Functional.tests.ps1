@@ -502,7 +502,9 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
             $outputDir = Join-Path -Path $script:testWorkDir -ChildPath 'output-full'
             New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
 
-            Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -KeepSrr -KeepSources -Confirm:$false
+            # Use -SkipValidation because Plex source files won't have matching CRCs
+            # (they're transcoded/different from the original scene release files)
+            Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -KeepSrr -KeepSources -SkipValidation -Confirm:$false
 
             $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction SilentlyContinue
             $createdRars.Count | Should -BeGreaterThan 0

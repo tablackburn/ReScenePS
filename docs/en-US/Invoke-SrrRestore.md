@@ -14,7 +14,7 @@ Complete SRR restoration - extracts stored files, reconstructs archives, validat
 
 ```
 Invoke-SrrRestore [[-SrrFile] <String>] [[-SourcePath] <String>] [[-OutputPath] <String>] [-KeepSrr]
- [-KeepSources] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm] [<CommonParameters>]
+ [-KeepSources] [-SkipValidation] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -110,6 +110,22 @@ Accept wildcard characters: False
 
 ### -KeepSources
 If specified, do not delete source files (e.g., .mkv) after successful restoration.
+
+```yaml
+Type: SwitchParameter
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: False
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SkipValidation
+Skip CRC validation against embedded SFV. Use when source files differ from original
+scene release (e.g., when using Plex or other media server sources for testing).
 
 ```yaml
 Type: SwitchParameter
