@@ -447,4 +447,312 @@ Describe 'ConvertFrom-SrsFileMetadata' {
             $result.Tracks[0].DataLength | Should -Be 2000
         }
     }
+
+    Context 'Fallback scanning with 0xC0/0xC1/0xC2 format' {
+        BeforeAll {
+            # Create an SRS file that triggers the fallback scanning logic
+            # The fallback looks for 0xC0 (ReSample container), 0xC1 (FileData), 0xC2 (TrackData)
+            $script:fallbackSrs = Join-Path $script:tempDir 'fallback.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header (minimal, but valid enough to not throw on magic check)
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Segment with unknown size (forces fallback scanning)
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte]0xFF)  # Unknown size marker
+
+            # Some padding before the 0xC0 container
+            $bw.Write([byte[]]@(0x00, 0x00, 0x00))
+
+            # 0xC0 = ReSample container in fallback format
+            $bw.Write([byte]0xC0)
+
+            # Build container content with 0xC1 (FileData) and 0xC2 (TrackData)
+            $containerContent = [System.IO.MemoryStream]::new()
+            $ccw = [System.IO.BinaryWriter]::new($containerContent)
+
+            # 0xC1 = ResampleFile in fallback format
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('FallbackApp')
+            $sampleName = [System.Text.Encoding]::UTF8.GetBytes('fallback.mkv')
+            $fileDataBytes = [System.IO.MemoryStream]::new()
+            $fdw = [System.IO.BinaryWriter]::new($fileDataBytes)
+            $fdw.Write([uint16]0x0000)  # Flags
+            $fdw.Write([uint16]$appName.Length)
+            $fdw.Write($appName)
+            $fdw.Write([uint16]$sampleName.Length)
+            $fdw.Write($sampleName)
+            $fdw.Write([uint64]555555)  # OriginalSize
+            $fdw.Write([uint32]0x11223344)  # CRC32
+            $fdw.Flush()
+            $fileData = $fileDataBytes.ToArray()
+            $fdw.Dispose()
+            $fileDataBytes.Dispose()
+
+            $ccw.Write([byte]0xC1)  # FileData element
+            $ccw.Write([byte](0x80 + $fileData.Length))  # Size
+            $ccw.Write($fileData)
+
+            # 0xC2 = ResampleTrack in fallback format
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0000)  # Flags
+            $tw.Write([uint16]3)  # TrackNumber
+            $tw.Write([uint32]7777)  # DataLength
+            $tw.Write([uint64]0x9999)  # MatchOffset
+            $tw.Write([uint16]0)  # SignatureBytesLength
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            $ccw.Write([byte]0xC2)  # TrackData element
+            $ccw.Write([byte](0x80 + $trackData.Length))
+            $ccw.Write($trackData)
+
+            $ccw.Flush()
+            $containerData = $containerContent.ToArray()
+            $ccw.Dispose()
+            $containerContent.Dispose()
+
+            # Write container size and data
+            $bw.Write([byte](0x80 + $containerData.Length))
+            $bw.Write($containerData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:fallbackSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Falls back to scanning and parses 0xC0 container' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fallbackSrs
+            $result.FileData | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Parses 0xC1 FileData element in fallback mode' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fallbackSrs
+            $result.FileData.AppName | Should -Be 'FallbackApp'
+            $result.FileData.SampleName | Should -Be 'fallback.mkv'
+            $result.FileData.OriginalSize | Should -Be 555555
+            $result.FileData.CRC32 | Should -Be 0x11223344
+        }
+
+        It 'Parses 0xC2 TrackData element in fallback mode' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fallbackSrs
+            $result.Tracks.Count | Should -Be 1
+            $result.Tracks[0].TrackNumber | Should -Be 3
+            $result.Tracks[0].DataLength | Should -Be 7777
+            $result.Tracks[0].MatchOffset | Should -Be 0x9999
+        }
+    }
+
+    Context 'Multiple tracks' {
+        BeforeAll {
+            $script:multiTrackSrs = Join-Path $script:tempDir 'multitrack.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build two ResampleTrack elements
+            $trackData1 = [System.IO.MemoryStream]::new()
+            $tw1 = [System.IO.BinaryWriter]::new($trackData1)
+            $tw1.Write([uint16]0x0000)
+            $tw1.Write([uint16]1)
+            $tw1.Write([uint32]1000)
+            $tw1.Write([uint64]0x100)
+            $tw1.Write([uint16]0)
+            $tw1.Flush()
+            $track1 = $trackData1.ToArray()
+            $tw1.Dispose()
+            $trackData1.Dispose()
+
+            $trackData2 = [System.IO.MemoryStream]::new()
+            $tw2 = [System.IO.BinaryWriter]::new($trackData2)
+            $tw2.Write([uint16]0x0000)
+            $tw2.Write([uint16]2)
+            $tw2.Write([uint32]2000)
+            $tw2.Write([uint64]0x200)
+            $tw2.Write([uint16]0)
+            $tw2.Flush()
+            $track2 = $trackData2.ToArray()
+            $tw2.Dispose()
+            $trackData2.Dispose()
+
+            # Calculate total size
+            $elem1Size = 2 + 1 + $track1.Length
+            $elem2Size = 2 + 1 + $track2.Length
+            $totalSize = $elem1Size + $elem2Size
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $totalSize))
+
+            # First track
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $track1.Length))
+            $bw.Write($track1)
+
+            # Second track
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $track2.Length))
+            $bw.Write($track2)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:multiTrackSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses multiple tracks' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:multiTrackSrs
+            $result.Tracks.Count | Should -Be 2
+        }
+
+        It 'Correctly identifies each track number' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:multiTrackSrs
+            $result.Tracks[0].TrackNumber | Should -Be 1
+            $result.Tracks[1].TrackNumber | Should -Be 2
+        }
+
+        It 'Correctly parses each track DataLength' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:multiTrackSrs
+            $result.Tracks[0].DataLength | Should -Be 1000
+            $result.Tracks[1].DataLength | Should -Be 2000
+        }
+    }
+
+    Context 'Skip unknown elements' {
+        BeforeAll {
+            $script:unknownElemSrs = Join-Path $script:tempDir 'unknown.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build track data
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0000)
+            $tw.Write([uint16]5)
+            $tw.Write([uint32]9999)
+            $tw.Write([uint64]0x5555)
+            $tw.Write([uint16]0)
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            # Unknown element (0xBF = some random ID)
+            $unknownData = [byte[]]@(0x01, 0x02, 0x03, 0x04, 0x05)
+            $unknownElemSize = 1 + 1 + $unknownData.Length
+
+            # Track element
+            $trackElemSize = 2 + 1 + $trackData.Length
+
+            $totalSize = $unknownElemSize + $trackElemSize
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $totalSize))
+
+            # Unknown element first
+            $bw.Write([byte]0xBF)
+            $bw.Write([byte](0x80 + $unknownData.Length))
+            $bw.Write($unknownData)
+
+            # Then track element
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $trackData.Length))
+            $bw.Write($trackData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:unknownElemSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Skips unknown elements and continues parsing' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:unknownElemSrs
+            $result.Tracks.Count | Should -Be 1
+            $result.Tracks[0].TrackNumber | Should -Be 5
+        }
+    }
+
+    Context 'Combined BigTrack and BigFile flags' {
+        BeforeAll {
+            $script:bothFlagsSrs = Join-Path $script:tempDir 'bothflags.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleTrack with both flags
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x000C)  # Flags: BigTrack (0x8) + BigFile (0x4)
+            $tw.Write([uint32]99999)  # TrackNumber (4 bytes due to BigTrack)
+            $tw.Write([uint64]8888888888)  # DataLength (8 bytes due to BigFile)
+            $tw.Write([uint64]0x7777)  # MatchOffset
+            $tw.Write([uint16]2)  # SignatureBytesLength
+            $tw.Write([byte[]]@(0xAA, 0xBB))  # SignatureBytes
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            $trackElemSize = 2 + 1 + $trackData.Length
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $trackElemSize))
+
+            # ResampleTrack element
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $trackData.Length))
+            $bw.Write($trackData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:bothFlagsSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses track with both BigTrack and BigFile flags' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bothFlagsSrs
+            $result.Tracks.Count | Should -Be 1
+        }
+
+        It 'Reads 4-byte TrackNumber correctly' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bothFlagsSrs
+            $result.Tracks[0].TrackNumber | Should -Be 99999
+        }
+
+        It 'Reads 8-byte DataLength correctly' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bothFlagsSrs
+            $result.Tracks[0].DataLength | Should -Be 8888888888
+        }
+
+        It 'Reads signature bytes correctly' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bothFlagsSrs
+            $result.Tracks[0].SignatureBytes | Should -Be @(0xAA, 0xBB)
+        }
+    }
 }
