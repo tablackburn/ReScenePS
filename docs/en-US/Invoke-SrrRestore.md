@@ -14,7 +14,8 @@ Complete SRR restoration - extracts stored files, reconstructs archives, validat
 
 ```
 Invoke-SrrRestore [[-SrrFile] <String>] [[-SourcePath] <String>] [[-OutputPath] <String>] [-KeepSrr]
- [-KeepSources] [-SkipValidation] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm] [<CommonParameters>]
+ [-KeepSources] [-SkipValidation] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm]
+ [<CommonParameters>]
 ```
 
 ## DESCRIPTION

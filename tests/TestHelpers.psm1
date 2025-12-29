@@ -437,6 +437,7 @@ function Remove-CachedMediaFile {
     .DESCRIPTION
     Surgically removes a single cached file and updates metadata.
     Useful for freeing disk space in CI environments after processing.
+    Returns silently if the cache entry doesn't exist (already cleaned up).
 
     .PARAMETER RatingKey
     The Plex rating key for the media item to remove.
@@ -445,7 +446,7 @@ function Remove-CachedMediaFile {
     Path to the cache directory.
 
     .OUTPUTS
-    [bool] True if file was removed, false otherwise
+    [bool] True if file was removed, false if not found or already cleaned
     #>
     [CmdletBinding()]
     param(
@@ -458,35 +459,54 @@ function Remove-CachedMediaFile {
 
     $metadataPath = Join-Path $CachePath 'metadata.json'
     if (-not (Test-Path $metadataPath)) {
+        # No metadata file means nothing to clean up
         return $false
     }
 
+    $cacheKey = "rk_$RatingKey"
+
     try {
-        $metadata = Get-Content $metadataPath -Raw | ConvertFrom-Json -AsHashtable
-        $cacheKey = "rk_$RatingKey"
-
-        if ($metadata.items -and $metadata.items.ContainsKey($cacheKey)) {
-            $entry = $metadata.items[$cacheKey]
-
-            # Remove the actual file and its parent directory
-            if ($entry.LocalPath -and (Test-Path $entry.LocalPath)) {
-                $parentDir = Split-Path -Parent $entry.LocalPath
-                Remove-Item -Path $parentDir -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Verbose "Removed cached file: $($entry.LocalPath)"
-            }
-
-            # Update metadata
-            $metadata.items.Remove($cacheKey)
-            $metadata | ConvertTo-Json -Depth 10 | Set-Content $metadataPath -Encoding UTF8
-
-            return $true
-        }
+        $metadata = Get-Content $metadataPath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
     }
     catch {
-        Write-Warning "Error removing cached file for RatingKey $RatingKey`: $_"
+        # Metadata file unreadable or invalid - nothing to clean up
+        return $false
     }
 
-    return $false
+    # Check if this RatingKey exists in cache
+    if (-not $metadata.items -or -not $metadata.items.ContainsKey($cacheKey)) {
+        # Entry doesn't exist - already cleaned up or never cached
+        return $false
+    }
+
+    $entry = $metadata.items[$cacheKey]
+
+    # Remove the actual file and its parent directory if they exist
+    if ($entry.LocalPath) {
+        $parentDir = Split-Path -Parent $entry.LocalPath
+        if ($parentDir -and (Test-Path $parentDir)) {
+            try {
+                Remove-Item -Path $parentDir -Recurse -Force -ErrorAction Stop
+                Write-Verbose "Removed cached directory: $parentDir"
+            }
+            catch {
+                # Directory may have already been removed by another process
+                Write-Verbose "Could not remove cached directory: $parentDir - $_"
+            }
+        }
+    }
+
+    # Update metadata to remove the entry
+    try {
+        $metadata.items.Remove($cacheKey)
+        $metadata | ConvertTo-Json -Depth 10 | Set-Content $metadataPath -Encoding UTF8
+    }
+    catch {
+        Write-Warning "Failed to update cache metadata after removing RatingKey $RatingKey`: $_"
+        return $false
+    }
+
+    return $true
 }
 
 function Invoke-PlexMediaDownload {
