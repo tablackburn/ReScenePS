@@ -12,10 +12,24 @@ properties {
     $PSBPreference.Help.DefaultLocale = 'en-US'
     $PSBPreference.Test.OutputFile = 'out/testResults.xml'
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
-    # Code coverage disabled - PowerShellBuild measures built module but tests run against source
-    # TODO: Configure proper code coverage paths if needed
-    $PSBPreference.Test.CodeCoverage.Enabled = $false
-    $PSBPreference.Test.CodeCoverage.Threshold = 0.70  # 70% minimum coverage
+
+    # Code coverage configuration
+    # Since CompileModule = $false, source files are copied to Output/ and tests run against them
+    # We must point coverage to the built module files since that's what gets executed
+    $PSBPreference.Test.CodeCoverage.Enabled = $true
+    $PSBPreference.Test.CodeCoverage.Threshold = 0.65  # 65% minimum coverage
+
+    # Compute module output path (ModuleOutDir is null until Initialize-PSBuild runs)
+    $moduleName = 'ReScenePS'
+    $sourceManifest = Join-Path $PSScriptRoot "$moduleName/$moduleName.psd1"
+    $moduleVersion = (Import-PowerShellDataFile -Path $sourceManifest).ModuleVersion
+    $moduleOutDir = Join-Path $PSScriptRoot "Output/$moduleName/$moduleVersion"
+
+    $PSBPreference.Test.CodeCoverage.Files = @(
+        (Join-Path $moduleOutDir 'Public/*.ps1'),
+        (Join-Path $moduleOutDir 'Private/*.ps1'),
+        (Join-Path $moduleOutDir 'Classes/*.ps1')
+    )
 
     # Test tools configuration
     $script:ToolsPath = Join-Path -Path $PSScriptRoot -ChildPath 'tools'
