@@ -48,8 +48,8 @@ function Export-MkvTrackData {
 
         $clusterCount = 0; $blockCount = 0; $done = $false
 
-        $ebmlId = Read-EbmlId -Reader $reader; $ebmlSize = Read-EbmlVarInt -Reader $reader; $fs.Seek([int64]$ebmlSize.Value, [System.IO.SeekOrigin]::Current) | Out-Null
-        $segId = Read-EbmlId -Reader $reader; $segSize = Read-EbmlVarInt -Reader $reader; $segmentStart = $fs.Position
+        $null = Read-EbmlId -Reader $reader; $ebmlSize = Read-EbmlVarInt -Reader $reader; $fs.Seek([int64]$ebmlSize.Value, [System.IO.SeekOrigin]::Current) | Out-Null
+        $null = Read-EbmlId -Reader $reader; $null = Read-EbmlVarInt -Reader $reader
 
         while ($fs.Position -lt $fileSize -and -not $done) {
             $elemStart = $fs.Position

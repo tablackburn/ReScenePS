@@ -86,12 +86,12 @@ function ConvertFrom-SrsFileMetadata {
         }
 
         # Parse EBML: read EBML header, then Segment, then inner ReSample elements
-        $ebmlId = Read-EbmlElementId -Reader $br
+        $null = Read-EbmlElementId -Reader $br
         $ebmlSizeInfo = Read-EbmlVarInt -Reader $br
         $fs.Seek([int64]$ebmlSizeInfo.Value, [System.IO.SeekOrigin]::Current) | Out-Null
 
         # Segment
-        $segId = Read-EbmlElementId -Reader $br
+        $null = Read-EbmlElementId -Reader $br
         $segSizeInfo = Read-EbmlVarInt -Reader $br
         $segmentStart = $fs.Position
         $segUnknownMax = [uint64]([math]::Pow(2, 7 * $segSizeInfo.Bytes) - 1)
@@ -101,7 +101,6 @@ function ConvertFrom-SrsFileMetadata {
             $remaining = $segmentEnd - $fs.Position
             if ($remaining -le 0) { break }
             try {
-                $elemStart = $fs.Position
                 $idBytes = Read-EbmlElementId -Reader $br
                 $sizeInfo = Read-EbmlVarInt -Reader $br
                 $dataSize = [int64]$sizeInfo.Value
@@ -300,7 +299,9 @@ function ConvertFrom-SrsFileMetadata {
                         if ($metadata.Tracks.Count -gt 0 -or $metadata.FileData) { break }
                     }
                 }
-                catch {}
+                catch {
+                    Write-Verbose "Parse error at position $pos - continuing scan"
+                }
                 $pos += 1
             }
         }

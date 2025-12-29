@@ -181,7 +181,6 @@ function Build-SampleAviFromSrs {
 
         # Process chunks until movi
         while ($ms.Position -lt $SrsData.Length - 8) {
-            $chunkPos = $ms.Position
             $chunkId = [System.Text.Encoding]::ASCII.GetString($reader.ReadBytes(4))
             $chunkSize = $reader.ReadUInt32()
 
@@ -198,7 +197,6 @@ function Build-SampleAviFromSrs {
 
                     # Skip SRSF and SRST chunks to find frame index
                     while ($ms.Position -lt $SrsData.Length - 8) {
-                        $subPos = $ms.Position
                         $subId = [System.Text.Encoding]::ASCII.GetString($reader.ReadBytes(4))
                         $subSize = $reader.ReadUInt32()
 

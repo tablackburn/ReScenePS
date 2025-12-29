@@ -53,6 +53,9 @@ function Export-SampleTrackData {
     )
 
     # For now, delegate to simple extraction - caller should use Export-MkvTrackData instead
+    # SignatureBytes reserved for future validation (suppress PSReviewUnusedParameter)
+    $null = $SignatureBytes
+
     if (-not (Test-Path $MainFilePath)) {
         throw "Main file not found: $MainFilePath"
     }
