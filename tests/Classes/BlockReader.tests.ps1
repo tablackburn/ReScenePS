@@ -206,4 +206,148 @@ Describe 'BlockReader' {
             { Get-SrrBlock -SrrFile 'C:\nonexistent\path\fake.srr' } | Should -Throw
         }
     }
+
+    Context 'SrrBlock.GetBlockBytes method' {
+        It 'Serializes SrrHeaderBlock back to bytes' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $headerBlock = $blocks[0]
+            $bytes = $headerBlock.GetBlockBytes()
+
+            # Should start with CRC, Type, Flags, Size (7 bytes minimum)
+            $bytes.Length | Should -BeGreaterOrEqual 7
+            # Type byte should be 0x69 at position 2
+            $bytes[2] | Should -Be 0x69
+        }
+
+        It 'Serializes block with RawData correctly' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $headerBlock = $blocks[0]
+            $bytes = $headerBlock.GetBlockBytes()
+
+            # Total bytes = 7 (header) + RawData length
+            $expectedLength = 7 + $headerBlock.RawData.Length
+            $bytes.Length | Should -Be $expectedLength
+        }
+
+        It 'Serializes RarMarkerBlock to 7 bytes' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $markerBlock = $blocks | Where-Object { $_.GetType().Name -eq 'RarMarkerBlock' }
+            $bytes = $markerBlock.GetBlockBytes()
+
+            $bytes.Length | Should -Be 7
+        }
+    }
+
+    Context 'SrrBlock.GetTypeName method' {
+        It 'Returns type name string for known block types' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $headerBlock = $blocks[0]
+            $typeName = $headerBlock.GetTypeName()
+
+            # Should return either the friendly name or Unknown format
+            $typeName | Should -Not -BeNullOrEmpty
+            $typeName | Should -Match '^(SRR Volume Header|Unknown \(0x69\))$'
+        }
+
+        It 'Returns consistent type name for RAR Marker' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $markerBlock = $blocks | Where-Object { $_.GetType().Name -eq 'RarMarkerBlock' }
+            $typeName = $markerBlock.GetTypeName()
+
+            $typeName | Should -Not -BeNullOrEmpty
+            $typeName | Should -Match '^(RAR Marker|Unknown \(0x72\))$'
+        }
+
+        It 'Returns consistent type name for SRR RAR subblock' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $rarFileBlock = $blocks | Where-Object { $_.GetType().Name -eq 'SrrRarFileBlock' }
+            $typeName = $rarFileBlock.GetTypeName()
+
+            $typeName | Should -Not -BeNullOrEmpty
+            $typeName | Should -Match '^(SRR RAR subblock|Unknown \(0x71\))$'
+        }
+
+        It 'Returns formatted string for unknown block types' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $headerBlock = $blocks[0]
+            $typeName = $headerBlock.GetTypeName()
+
+            # GetTypeName should always return a non-empty string
+            $typeName.Length | Should -BeGreaterThan 0
+        }
+
+        It 'Returns "Unknown (0xXX)" format for unregistered types' {
+            # Verify the format string is correct - should contain hex prefix
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $block = $blocks[0]
+            $typeName = $block.GetTypeName()
+
+            # Format should either be known name or "Unknown (0xNN)"
+            $typeName | Should -Match '^[A-Za-z]|^Unknown \(0x[0-9A-Fa-f]+\)$'
+        }
+    }
+
+    Context 'SrrBlock.GetTotalSize method' {
+        It 'Returns HeadSize for blocks without AddSize' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $markerBlock = $blocks | Where-Object { $_.GetType().Name -eq 'RarMarkerBlock' }
+
+            # Marker block has AddSize = 0
+            $markerBlock.AddSize | Should -Be 0
+            $markerBlock.GetTotalSize() | Should -Be $markerBlock.HeadSize
+        }
+
+        It 'Returns HeadSize + AddSize for stored file blocks' {
+            $blocks = Get-SrrBlock -SrrFile $script:storedFileSrrPath
+            $storedBlock = $blocks | Where-Object { $_.GetType().Name -eq 'SrrStoredFileBlock' }
+
+            $expectedTotal = $storedBlock.HeadSize + $storedBlock.AddSize
+            $storedBlock.GetTotalSize() | Should -Be $expectedTotal
+        }
+
+        It 'Returns correct total for header block' {
+            $blocks = Get-SrrBlock -SrrFile $script:minimalSrrPath
+            $headerBlock = $blocks[0]
+
+            $headerBlock.GetTotalSize() | Should -Be ($headerBlock.HeadSize + $headerBlock.AddSize)
+        }
+    }
+
+    Context 'SrrHeaderBlock with empty app name' {
+        BeforeAll {
+            # SRR file where app name flag is set but name length is 0
+            # Must be at least 20 bytes and have valid block structure
+            $script:emptyAppNameSrrPath = Join-Path $script:tempDir 'emptyappname.srr'
+            $ms = [System.IO.MemoryStream]::new()
+            $writer = [System.IO.BinaryWriter]::new($ms)
+
+            # SRR Header Block with app name flag but 0-length name
+            $headerSize = 7 + 2  # 7 base + 2 name length (which will be 0)
+            $writer.Write([uint16]0x6969)  # CRC
+            $writer.Write([byte]0x69)       # Type
+            $writer.Write([uint16]0x0001)   # Flags: has app name
+            $writer.Write([uint16]$headerSize)
+            $writer.Write([uint16]0)        # Name length = 0
+
+            # SRR RAR File Block (type 0x71) - required before RAR blocks
+            $rarFileName = [System.Text.Encoding]::UTF8.GetBytes('test.rar')
+            $rarFileBlockSize = 7 + 2 + $rarFileName.Length
+            $writer.Write([uint16]0x7171)
+            $writer.Write([byte]0x71)
+            $writer.Write([uint16]0x0000)
+            $writer.Write([uint16]$rarFileBlockSize)
+            $writer.Write([uint16]$rarFileName.Length)
+            $writer.Write($rarFileName)
+
+            $writer.Flush()
+            [System.IO.File]::WriteAllBytes($script:emptyAppNameSrrPath, $ms.ToArray())
+            $writer.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses with empty app name' {
+            $blocks = Get-SrrBlock -SrrFile $script:emptyAppNameSrrPath
+            $blocks[0].AppName | Should -Be ''
+        }
+    }
 }
