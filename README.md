@@ -1,6 +1,9 @@
 # ReScenePS
 
-PowerShell module for reconstructing RAR archives from SRR files and MKV samples from SRS files.
+[![CI](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml/badge.svg)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS)
+
+PowerShell module for reconstructing RAR archives from SRR files and MKV/AVI samples from SRS files.
 
 ## Installation
 
@@ -11,11 +14,11 @@ Install-Module -Name ReScenePS
 
 ### From Source
 ```powershell
-git clone https://github.com/yourusername/ReScenePS.git
+git clone https://github.com/tablackburn/ReScenePS.git
 cd ReScenePS
 ./build.ps1 -Bootstrap
 ./build.ps1 -Task Build
-Import-Module ./Output/ReScenePS/0.1.0/ReScenePS.psd1
+Import-Module ./Output/ReScenePS/ReScenePS.psd1
 ```
 
 ## Requirements
@@ -38,11 +41,14 @@ Invoke-SrrRestore -SrrFile "release.srr" -SourcePath "./sources" -OutputPath "./
 Invoke-SrrRestore -KeepSrr -KeepSources
 ```
 
-### Reconstruct MKV Sample from SRS
+### Reconstruct Video Sample from SRS
 
 ```powershell
-# High-level reconstruction
-Restore-SrsVideo -SrsFilePath "sample.srs" -SourceMkvPath "main.mkv" -OutputMkvPath "sample.mkv"
+# MKV sample reconstruction
+Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "main.mkv" -OutputPath "sample.mkv"
+
+# AVI sample reconstruction (auto-detected from SRS format)
+Restore-SrsVideo -SrsFilePath "sample.srs" -SourcePath "main.avi" -OutputPath "sample.avi"
 ```
 
 ### Inspect SRR/SRS Files
@@ -66,14 +72,15 @@ ConvertFrom-SrsFileMetadata -FilePath "sample.srs"
 | `Invoke-SrrReconstruct` | Reconstruct RAR files from SRR and source files |
 | `Invoke-SrrRestore` | Complete end-to-end restoration with validation and cleanup |
 
-### SRS (MKV Sample Reconstruction)
+### SRS (Video Sample Reconstruction)
 
 | Function | Description |
 |----------|-------------|
+| `Restore-SrsVideo` | High-level sample reconstruction (MKV/AVI auto-detected) |
 | `ConvertFrom-SrsFileMetadata` | Parse SRS file and return metadata object |
-| `Export-SampleTrackData` | Extract track data from source MKV |
-| `Build-SampleMkvFromSrs` | Combine SRS structure with extracted track data |
-| `Restore-SrsVideo` | High-level sample reconstruction entry point |
+| `Build-SampleMkvFromSrs` | Reconstruct MKV sample from SRS and track data |
+| `Build-SampleAviFromSrs` | Reconstruct AVI sample from SRS and source data |
+| `Export-SampleTrackData` | Extract track data from source video |
 
 ## Development
 

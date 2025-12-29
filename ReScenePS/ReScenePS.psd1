@@ -12,7 +12,7 @@
 RootModule = 'ReScenePS.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.1.0'
+ModuleVersion = '0.2.0'
 
 # Supported PSEditions
 CompatiblePSEditions = @('Core')
@@ -108,10 +108,10 @@ PrivateData = @{
         Tags = @('ReScene', 'SRR', 'SRS', 'RAR', 'MKV', 'Reconstruction', 'Scene')
 
         # A URL to the license for this module.
-        # LicenseUri = ''
+        LicenseUri = 'https://github.com/tablackburn/ReScenePS/blob/main/LICENSE'
 
         # A URL to the main website for this project.
-        # ProjectUri = ''
+        ProjectUri = 'https://github.com/tablackburn/ReScenePS'
 
         # A URL to an icon representing this module.
         # IconUri = ''

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-12-29
+
+### Added
+
+- AVI sample reconstruction support via `Build-SampleAviFromSrs`
+- Comprehensive test coverage for EBML parsing edge cases
+- Fallback scanning for legacy SRS formats (0xC0/0xC1/0xC2)
+- Tests for multiple tracks, unknown elements, and combined flags
+
+### Changed
+
+- Improved code coverage from 74% to 78%
+- Fixed PSScriptAnalyzer warnings for unused variables
+- Updated README with CI badges and AVI documentation
+
+### Fixed
+
+- Flaky performance test threshold increased for CI stability
+- Empty catch block now logs verbose message for debugging
+
 ## [0.1.0] - 2025-12-26
 
 ### Added
