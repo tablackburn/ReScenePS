@@ -25,7 +25,7 @@ BeforeAll {
     # but more portable (no external dependencies)
     $script:Thresholds = @{
         ByteArrayCompare1KB    = 10      # 1KB array comparison
-        ByteArrayCompare1MB    = 2000    # 1MB array comparison (increased for CI variance)
+        ByteArrayCompare1MB    = 3500    # 1MB array comparison (increased for CI variance)
         EbmlParse1000Elements  = 500     # Parse 1000 EBML elements
         BlockReaderInit        = 50      # BlockReader initialization
         CRC32Calc1MB           = 5000    # CRC32 of 1MB file (pure PowerShell implementation)

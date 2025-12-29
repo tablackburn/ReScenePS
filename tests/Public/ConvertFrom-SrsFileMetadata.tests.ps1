@@ -99,4 +99,352 @@ Describe 'ConvertFrom-SrsFileMetadata' {
             ($result.Tracks -is [array] -or $result.Tracks.Count -eq 0) | Should -BeTrue
         }
     }
+
+    Context 'Parsing ResampleFile element' {
+        BeforeAll {
+            # Create SRS file with ResampleFile element (0x6A75) at top level
+            $script:fileDataSrs = Join-Path $script:tempDir 'filedata.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleFile data
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp')
+            $sampleName = [System.Text.Encoding]::UTF8.GetBytes('sample.mkv')
+            $fileDataBytes = [System.IO.MemoryStream]::new()
+            $fdw = [System.IO.BinaryWriter]::new($fileDataBytes)
+            $fdw.Write([uint16]0x0000)  # Flags
+            $fdw.Write([uint16]$appName.Length)
+            $fdw.Write($appName)
+            $fdw.Write([uint16]$sampleName.Length)
+            $fdw.Write($sampleName)
+            $fdw.Write([uint64]1234567890)  # OriginalSize
+            $fdw.Write([uint32]0x12345678)  # CRC32
+            $fdw.Flush()
+            $fileData = $fileDataBytes.ToArray()
+            $fdw.Dispose()
+            $fileDataBytes.Dispose()
+
+            # Calculate segment size (ResampleFile element)
+            $resampleFileSize = 2 + 1 + $fileData.Length  # ID + size byte + data
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))  # Segment ID
+            $bw.Write([byte](0x80 + $resampleFileSize))  # Size
+
+            # ResampleFile element (0x6A75)
+            $bw.Write([byte[]]@(0x6A, 0x75))
+            $bw.Write([byte](0x80 + $fileData.Length))
+            $bw.Write($fileData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:fileDataSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses ResampleFile data correctly' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fileDataSrs
+            $result.FileData | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Extracts AppName from FileData' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fileDataSrs
+            $result.FileData.AppName | Should -Be 'TestApp'
+        }
+
+        It 'Extracts SampleName from FileData' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fileDataSrs
+            $result.FileData.SampleName | Should -Be 'sample.mkv'
+        }
+
+        It 'Extracts OriginalSize from FileData' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fileDataSrs
+            $result.FileData.OriginalSize | Should -Be 1234567890
+        }
+
+        It 'Extracts CRC32 from FileData' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:fileDataSrs
+            $result.FileData.CRC32 | Should -Be 0x12345678
+        }
+    }
+
+    Context 'Parsing ResampleTrack element' {
+        BeforeAll {
+            # Create SRS file with ResampleTrack element (0x6B75)
+            $script:trackDataSrs = Join-Path $script:tempDir 'trackdata.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleTrack data (standard: 2-byte track, 4-byte dataLength)
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0000)  # Flags (no big track, no big file)
+            $tw.Write([uint16]1)  # TrackNumber (2 bytes)
+            $tw.Write([uint32]5000)  # DataLength (4 bytes)
+            $tw.Write([uint64]0x1234)  # MatchOffset (8 bytes)
+            $tw.Write([uint16]4)  # SignatureBytesLength
+            $tw.Write([byte[]]@(0xDE, 0xAD, 0xBE, 0xEF))  # SignatureBytes
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            # Calculate segment size
+            $trackElemSize = 2 + 1 + $trackData.Length
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $trackElemSize))
+
+            # ResampleTrack element (0x6B75)
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $trackData.Length))
+            $bw.Write($trackData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:trackDataSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses ResampleTrack data' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:trackDataSrs
+            $result.Tracks.Count | Should -BeGreaterThan 0
+        }
+
+        It 'Extracts TrackNumber' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:trackDataSrs
+            $result.Tracks[0].TrackNumber | Should -Be 1
+        }
+
+        It 'Extracts DataLength' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:trackDataSrs
+            $result.Tracks[0].DataLength | Should -Be 5000
+        }
+
+        It 'Extracts MatchOffset' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:trackDataSrs
+            $result.Tracks[0].MatchOffset | Should -Be 0x1234
+        }
+
+        It 'Extracts SignatureBytes' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:trackDataSrs
+            $result.Tracks[0].SignatureBytes | Should -Be @(0xDE, 0xAD, 0xBE, 0xEF)
+        }
+    }
+
+    Context 'Parsing ResampleTrack with BigTrack flag' {
+        BeforeAll {
+            # Create SRS with BigTrack flag (0x0008) set
+            $script:bigTrackSrs = Join-Path $script:tempDir 'bigtrack.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleTrack with BigTrack flag
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0008)  # Flags: BigTrack
+            $tw.Write([uint32]12345)  # TrackNumber (4 bytes due to BigTrack)
+            $tw.Write([uint32]8000)  # DataLength (4 bytes)
+            $tw.Write([uint64]0x5678)  # MatchOffset
+            $tw.Write([uint16]0)  # SignatureBytesLength = 0
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            $trackElemSize = 2 + 1 + $trackData.Length
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $trackElemSize))
+
+            # ResampleTrack element
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $trackData.Length))
+            $bw.Write($trackData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:bigTrackSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses track with BigTrack flag' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bigTrackSrs
+            $result.Tracks.Count | Should -Be 1
+        }
+
+        It 'Reads 4-byte TrackNumber with BigTrack flag' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bigTrackSrs
+            $result.Tracks[0].TrackNumber | Should -Be 12345
+        }
+    }
+
+    Context 'Parsing ResampleTrack with BigFile flag' {
+        BeforeAll {
+            # Create SRS with BigFile flag (0x0004) set
+            $script:bigFileSrs = Join-Path $script:tempDir 'bigfile.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleTrack with BigFile flag
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0004)  # Flags: BigFile
+            $tw.Write([uint16]2)  # TrackNumber (2 bytes)
+            $tw.Write([uint64]9876543210)  # DataLength (8 bytes due to BigFile)
+            $tw.Write([uint64]0xABCD)  # MatchOffset
+            $tw.Write([uint16]0)  # SignatureBytesLength = 0
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            $trackElemSize = 2 + 1 + $trackData.Length
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $trackElemSize))
+
+            # ResampleTrack element
+            $bw.Write([byte[]]@(0x6B, 0x75))
+            $bw.Write([byte](0x80 + $trackData.Length))
+            $bw.Write($trackData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:bigFileSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses track with BigFile flag' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bigFileSrs
+            $result.Tracks.Count | Should -Be 1
+        }
+
+        It 'Reads 8-byte DataLength with BigFile flag' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:bigFileSrs
+            $result.Tracks[0].DataLength | Should -Be 9876543210
+        }
+    }
+
+    Context 'Parsing ReSample container' {
+        BeforeAll {
+            # Create SRS with full ReSample container (0x1F697576)
+            $script:containerSrs = Join-Path $script:tempDir 'container.srs'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # EBML Header
+            $bw.Write([byte[]]@(0x1A, 0x45, 0xDF, 0xA3))
+            $bw.Write([byte]0x84)
+            $bw.Write([byte[]]@(0x42, 0x86, 0x81, 0x01))
+
+            # Build ResampleFile inside container
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('App')
+            $sampleName = [System.Text.Encoding]::UTF8.GetBytes('file.mkv')
+            $fileDataBytes = [System.IO.MemoryStream]::new()
+            $fdw = [System.IO.BinaryWriter]::new($fileDataBytes)
+            $fdw.Write([uint16]0x0000)
+            $fdw.Write([uint16]$appName.Length)
+            $fdw.Write($appName)
+            $fdw.Write([uint16]$sampleName.Length)
+            $fdw.Write($sampleName)
+            $fdw.Write([uint64]999999)
+            $fdw.Write([uint32]0x12345678)
+            $fdw.Flush()
+            $fileData = $fileDataBytes.ToArray()
+            $fdw.Dispose()
+            $fileDataBytes.Dispose()
+
+            # Build ResampleTrack inside container
+            $trackBytes = [System.IO.MemoryStream]::new()
+            $tw = [System.IO.BinaryWriter]::new($trackBytes)
+            $tw.Write([uint16]0x0000)
+            $tw.Write([uint16]1)
+            $tw.Write([uint32]2000)
+            $tw.Write([uint64]0x100)
+            $tw.Write([uint16]0)
+            $tw.Flush()
+            $trackData = $trackBytes.ToArray()
+            $tw.Dispose()
+            $trackBytes.Dispose()
+
+            # Container content
+            $containerContent = [System.IO.MemoryStream]::new()
+            $ccw = [System.IO.BinaryWriter]::new($containerContent)
+            # ResampleFile (0x6A75)
+            $ccw.Write([byte[]]@(0x6A, 0x75))
+            $ccw.Write([byte](0x80 + $fileData.Length))
+            $ccw.Write($fileData)
+            # ResampleTrack (0x6B75)
+            $ccw.Write([byte[]]@(0x6B, 0x75))
+            $ccw.Write([byte](0x80 + $trackData.Length))
+            $ccw.Write($trackData)
+            $ccw.Flush()
+            $containerData = $containerContent.ToArray()
+            $ccw.Dispose()
+            $containerContent.Dispose()
+
+            # ReSample container size
+            $containerSize = 4 + 1 + $containerData.Length
+
+            # Segment
+            $bw.Write([byte[]]@(0x18, 0x53, 0x80, 0x67))
+            $bw.Write([byte](0x80 + $containerSize))
+
+            # ReSample container (0x1F697576)
+            $bw.Write([byte[]]@(0x1F, 0x69, 0x75, 0x76))
+            $bw.Write([byte](0x80 + $containerData.Length))
+            $bw.Write($containerData)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:containerSrs, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Parses ReSample container' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:containerSrs
+            $result.FileData | Should -Not -BeNullOrEmpty
+            $result.Tracks.Count | Should -Be 1
+        }
+
+        It 'Extracts FileData from container' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:containerSrs
+            $result.FileData.SampleName | Should -Be 'file.mkv'
+            $result.FileData.CRC32 | Should -Be 0x12345678
+        }
+
+        It 'Extracts TrackData from container' {
+            $result = ConvertFrom-SrsFileMetadata -SrsFilePath $script:containerSrs
+            $result.Tracks[0].DataLength | Should -Be 2000
+        }
+    }
 }
