@@ -1,7 +1,9 @@
 # ReScenePS
 
-[![CI](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml/badge.svg)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
-[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS)
+[![PowerShell Gallery Downloads](https://img.shields.io/powershellgallery/dt/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS/)
+[![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS/)
+[![CI](https://img.shields.io/github/actions/workflow/status/tablackburn/ReScenePS/CI.yaml?branch=main)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
+![Platform](https://img.shields.io/powershellgallery/p/ReScenePS)
 [![AI Assisted](https://img.shields.io/badge/AI-Assisted-blue)](https://claude.ai)
 
 PowerShell module for reconstructing RAR archives from SRR files and MKV/AVI samples from SRS files.
