@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml/badge.svg)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
 [![PowerShell Gallery](https://img.shields.io/powershellgallery/v/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS)
+[![AI Assisted](https://img.shields.io/badge/AI-Assisted-blue)](https://claude.ai)
 
 PowerShell module for reconstructing RAR archives from SRR files and MKV/AVI samples from SRS files.
 
@@ -159,6 +160,10 @@ SRS files contain MKV structure without frame data:
 2. Extract matching track data from the full source MKV
 3. Rebuild sample by injecting extracted data into the SRS structure
 
+
+## Acknowledgments
+
+This project was developed with assistance from [Claude](https://claude.ai) by Anthropic.
 ## License
 
 MIT
