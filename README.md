@@ -5,6 +5,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/tablackburn/ReScenePS/CI.yaml?branch=main)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
 ![Platform](https://img.shields.io/powershellgallery/p/ReScenePS)
 [![AI Assisted](https://img.shields.io/badge/AI-Assisted-blue)](https://claude.ai)
+[![License](https://img.shields.io/github/license/tablackburn/ReScenePS)](LICENSE)
 
 PowerShell module for reconstructing RAR archives from SRR files and MKV/AVI samples from SRS files.
 
