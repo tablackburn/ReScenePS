@@ -164,6 +164,7 @@ SRS files contain MKV structure without frame data:
 ## Acknowledgments
 
 This project was developed with assistance from [Claude](https://claude.ai) by Anthropic.
+
 ## License
 
 MIT
