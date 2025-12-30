@@ -205,4 +205,96 @@ Describe 'Export-MkvTrackData' {
             }
         }
     }
+
+    Context 'Lacing type support' {
+
+        BeforeAll {
+            Import-Module "$PSScriptRoot/../TestDataBuilders.psm1" -Force
+        }
+
+        It 'Extracts data from Xiph-laced block (type 1)' {
+            $xiphMkv = Join-Path $script:tempDir 'xiph-laced.mkv'
+            $frame1 = [byte[]]@(0x11, 0x12, 0x13, 0x14, 0x15)
+            $frame2 = [byte[]]@(0x21, 0x22, 0x23, 0x24, 0x25)
+            $frame3 = [byte[]]@(0x31, 0x32, 0x33, 0x34, 0x35)
+            New-TestMkvWithLacing -OutputPath $xiphMkv -LacingType 1 -TrackNumber 1 -FrameData @($frame1, $frame2, $frame3)
+
+            InModuleScope 'ReScenePS' -Parameters @{ file = $xiphMkv } {
+                # Keys must be [uint16] to match how Export-MkvTrackData looks them up
+                $tracks = @{
+                    [uint16]1 = [PSCustomObject]@{
+                        TrackNumber  = [uint16]1
+                        DataLength   = 15
+                        MatchOffset  = 1  # Must be > 0 to avoid cluster skipping
+                    }
+                }
+                $outputFiles = @{}
+
+                $result = Export-MkvTrackData -MainFilePath $file -Tracks $tracks -OutputFiles $outputFiles
+
+                $result | Should -BeTrue
+                $outputFiles.ContainsKey([uint16]1) | Should -BeTrue
+                Test-Path $outputFiles[[uint16]1] | Should -BeTrue
+                # Verify actual data was extracted
+                (Get-Item $outputFiles[[uint16]1]).Length | Should -BeGreaterThan 0
+            }
+        }
+
+        It 'Extracts data from fixed-size laced block (type 2)' {
+            $fixedMkv = Join-Path $script:tempDir 'fixed-laced.mkv'
+            # All frames must be same size for fixed-size lacing
+            $frame1 = [byte[]]@(0x41, 0x42, 0x43, 0x44, 0x45)
+            $frame2 = [byte[]]@(0x51, 0x52, 0x53, 0x54, 0x55)
+            $frame3 = [byte[]]@(0x61, 0x62, 0x63, 0x64, 0x65)
+            New-TestMkvWithLacing -OutputPath $fixedMkv -LacingType 2 -TrackNumber 1 -FrameData @($frame1, $frame2, $frame3)
+
+            InModuleScope 'ReScenePS' -Parameters @{ file = $fixedMkv } {
+                # Keys must be [uint16] to match how Export-MkvTrackData looks them up
+                $tracks = @{
+                    [uint16]1 = [PSCustomObject]@{
+                        TrackNumber  = [uint16]1
+                        DataLength   = 15
+                        MatchOffset  = 1  # Must be > 0 to avoid cluster skipping
+                    }
+                }
+                $outputFiles = @{}
+
+                $result = Export-MkvTrackData -MainFilePath $file -Tracks $tracks -OutputFiles $outputFiles
+
+                $result | Should -BeTrue
+                $outputFiles.ContainsKey([uint16]1) | Should -BeTrue
+                Test-Path $outputFiles[[uint16]1] | Should -BeTrue
+                # Verify actual data was extracted
+                (Get-Item $outputFiles[[uint16]1]).Length | Should -BeGreaterThan 0
+            }
+        }
+
+        It 'Extracts data from EBML-laced block (type 3)' {
+            $ebmlMkv = Join-Path $script:tempDir 'ebml-laced.mkv'
+            $frame1 = [byte[]]@(0x71, 0x72, 0x73, 0x74, 0x75)
+            $frame2 = [byte[]]@(0x81, 0x82, 0x83, 0x84, 0x85)
+            $frame3 = [byte[]]@(0x91, 0x92, 0x93, 0x94, 0x95)
+            New-TestMkvWithLacing -OutputPath $ebmlMkv -LacingType 3 -TrackNumber 1 -FrameData @($frame1, $frame2, $frame3)
+
+            InModuleScope 'ReScenePS' -Parameters @{ file = $ebmlMkv } {
+                # Keys must be [uint16] to match how Export-MkvTrackData looks them up
+                $tracks = @{
+                    [uint16]1 = [PSCustomObject]@{
+                        TrackNumber  = [uint16]1
+                        DataLength   = 15
+                        MatchOffset  = 1  # Must be > 0 to avoid cluster skipping
+                    }
+                }
+                $outputFiles = @{}
+
+                $result = Export-MkvTrackData -MainFilePath $file -Tracks $tracks -OutputFiles $outputFiles
+
+                $result | Should -BeTrue
+                $outputFiles.ContainsKey([uint16]1) | Should -BeTrue
+                Test-Path $outputFiles[[uint16]1] | Should -BeTrue
+                # Verify actual data was extracted
+                (Get-Item $outputFiles[[uint16]1]).Length | Should -BeGreaterThan 0
+            }
+        }
+    }
 }
