@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-12-30
+
+### Added
+
+- TestDataBuilders.psm1 module for generating synthetic MKV test files
+- Tests for MKV lacing types (Xiph, Fixed-size, EBML) in Export-MkvTrackData
+
+### Changed
+
+- Improve code coverage from 84% to 87%
+
 ## [0.2.0] - 2025-12-29
 
 ### Added
