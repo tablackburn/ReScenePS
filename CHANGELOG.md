@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-12-31
+
+### Changed
+
+- Fix PSScriptAnalyzer warnings by adding [OutputType()] attributes to all functions
+- Suppress false-positive PSUseSingularNouns warnings for acronyms (Srs) and technical terms (Bytes, Chunks)
+- Fix code coverage reporting by pointing to Output directory where tests execute
+- Fix cross-platform path assertion in Get-SrsInfo test
+
 ## [0.2.1] - 2025-12-30
 
 ### Added
