@@ -224,7 +224,8 @@ Describe 'Get-SrsInfo' {
                 $result = Get-SrsInfo -FilePath $file
 
                 # Path should be fully resolved (absolute)
-                $result.Path | Should -Match '^[A-Za-z]:\\'
+                # Windows uses drive letters (C:\...), Unix uses root (/)
+                $result.Path | Should -Match '^([A-Za-z]:\\|/)'
             }
         }
     }
