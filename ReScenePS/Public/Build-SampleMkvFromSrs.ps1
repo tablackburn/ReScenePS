@@ -54,7 +54,7 @@ function Build-SampleMkvFromSrs {
 
         $ID_Resample = [byte[]]@(0x1F, 0x69, 0x75, 0x76); $ID_Block = [byte[]]@(0xA1); $ID_SimpleBlock = [byte[]]@(0xA3)
 
-        $trackDataStreams = [ordered]@{}
+        $trackDataStreams = @{}
         foreach ($key in ($TrackDataFiles.Keys | Sort-Object)) { $trackFile = $TrackDataFiles[$key]; if (Test-Path $trackFile) { $trackDataStreams[$key] = [System.IO.File]::OpenRead($trackFile); Write-Verbose "Opened track data file for track $key : $trackFile" } }
 
         $srsFs = [System.IO.File]::OpenRead($SrsFilePath)
@@ -123,6 +123,8 @@ function Build-SampleMkvFromSrs {
                         } elseif ($frameDataSize -gt 0) {
                             $zeros = New-Object byte[] $frameDataSize; $outWriter.Write($zeros, 0, $zeros.Length)
                         }
+                        # Skip past placeholder frame data in SRS file
+                        if ($frameDataSize -gt 0) { $srsReader.ReadBytes([int]$frameDataSize) | Out-Null }
                     } catch { break }
                     $elemCount++; continue
                 }

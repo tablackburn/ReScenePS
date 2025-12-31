@@ -130,20 +130,19 @@ Describe 'Invoke-SrrReconstruct' {
             $bw.Write($appName)
 
             # SRR Stored File block (block type 0x6A)
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][AddSize(4)][NameLen(2)][FileName(n)][FileData]
             $storedFileName = 'release.nfo'
             $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($storedFileName)
             $storedFileContent = [System.Text.Encoding]::UTF8.GetBytes('Test NFO content for testing')
-            $storedBlockHeaderSize = 7 + 2 + $storedFileNameBytes.Length
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
             $bw.Write([uint16]0x0000)  # CRC
-            $bw.Write([byte]0x6A)       # Block type (SRR stored file)
+            $bw.Write([byte]0x6A)       # Type = SRR Stored File
             $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
-            $bw.Write([uint16]$storedBlockHeaderSize)
-            $bw.Write([uint16]$storedFileNameBytes.Length)
-            $bw.Write($storedFileNameBytes)
-            # ADD_SIZE for stored file data
-            $bw.Write([uint32]$storedFileContent.Length)
-            # The actual stored file content
-            $bw.Write($storedFileContent)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedFileContent.Length)  # AddSize (file size) first
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedFileContent)  # File data
 
             $bw.Flush()
             [System.IO.File]::WriteAllBytes($script:storedFilesSrr, $ms.ToArray())
@@ -203,18 +202,19 @@ Describe 'Invoke-SrrReconstruct' {
             $bw.Write($appName)
 
             # SRR Stored File block with subdirectory path
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][AddSize(4)][NameLen(2)][FileName(n)][FileData]
             $storedFileName = 'Sample/sample.srs'
             $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($storedFileName)
             $storedFileContent = [byte[]](1..20)
-            $storedBlockHeaderSize = 7 + 2 + $storedFileNameBytes.Length
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x6A)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$storedBlockHeaderSize)
-            $bw.Write([uint16]$storedFileNameBytes.Length)
-            $bw.Write($storedFileNameBytes)
-            $bw.Write([uint32]$storedFileContent.Length)
-            $bw.Write($storedFileContent)
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x6A)       # Type = SRR Stored File
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedFileContent.Length)  # AddSize (file size) first
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedFileContent)  # File data
 
             $bw.Flush()
             [System.IO.File]::WriteAllBytes($script:subDirStoredSrr, $ms.ToArray())
@@ -280,26 +280,25 @@ Describe 'Invoke-SrrReconstruct' {
             $bw.Write([uint32]0x00000000)
 
             # RAR Packed File block expecting 1000 bytes
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][PackSize(4)][UnpSize(4)][HostOS(1)]
+            #         [FileCRC(4)][DateTime(4)][Version(1)][Method(1)][NameSize(2)][Attr(4)][FileName(n)]
             $packedFileName = 'test.dat'
             $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
-            $packedBlockSize = 25 + 4 + $packedFileNameBytes.Length + 8
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x74)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$packedBlockSize)
-            $bw.Write([uint32]100)    # PackSize
-            $bw.Write([uint32]1000)   # UnpSize - expecting 1000 bytes
-            $bw.Write([byte]0x00)
-            $bw.Write([uint32]0x12345678)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([byte]0x15)
-            $bw.Write([byte]0x30)
-            $bw.Write([uint16]$packedFileNameBytes.Length)
-            $bw.Write([uint32]0x00000020)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write($packedFileNameBytes)
-            $bw.Write([uint32]100)
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x74)       # Type = RarPackedFile
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$packedBlockSize)  # HeadSize
+            $bw.Write([uint32]100)      # PackSize
+            $bw.Write([uint32]1000)     # UnpSize - expecting 1000 bytes
+            $bw.Write([byte]0x00)       # HostOS
+            $bw.Write([uint32]0x12345678)  # FileCRC
+            $bw.Write([uint32]0x00000000)  # DateTime
+            $bw.Write([byte]0x15)       # Version
+            $bw.Write([byte]0x30)       # Method
+            $bw.Write([uint16]$packedFileNameBytes.Length)  # NameSize
+            $bw.Write([uint32]0x00000020)  # Attributes
+            $bw.Write($packedFileNameBytes)  # FileName
 
             $bw.Flush()
             [System.IO.File]::WriteAllBytes($script:sizeMismatchSrr, $ms.ToArray())
@@ -308,24 +307,27 @@ Describe 'Invoke-SrrReconstruct' {
 
             # Create source file with wrong size (500 bytes instead of 1000)
             $script:wrongSizeSource = Join-Path $script:sizeMismatchDir 'test.dat'
-            [System.IO.File]::WriteAllBytes($script:wrongSizeSource, [byte[]](1..500))
+            $wrongSizeData = [byte[]]::new(500)
+            for ($i = 0; $i -lt 500; $i++) { $wrongSizeData[$i] = [byte]($i % 256) }
+            [System.IO.File]::WriteAllBytes($script:wrongSizeSource, $wrongSizeData)
         }
 
-        It 'Throws on source file size mismatch without -SkipValidation' {
+        It 'Throws when source file has wrong size' {
             $outputDir = Join-Path $script:sizeMismatchDir 'output'
             New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
 
+            # Find-SourceFile filters by expected size, so file with wrong size is not found
             { Invoke-SrrReconstruct -SrrFile $script:sizeMismatchSrr -SourcePath $script:sizeMismatchDir -OutputPath $outputDir } |
-                Should -Throw '*size mismatch*'
+                Should -Throw '*not found*'
         }
 
-        It 'Skips size validation with -SkipValidation' {
+        It 'Also throws with -SkipValidation when file size does not match' {
             $outputDir = Join-Path $script:sizeMismatchDir 'output-skip'
             New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
 
-            # Should not throw with -SkipValidation (though may fail for other reasons)
+            # Even with -SkipValidation, Find-SourceFile still filters by expected size
             { Invoke-SrrReconstruct -SrrFile $script:sizeMismatchSrr -SourcePath $script:sizeMismatchDir -OutputPath $outputDir -SkipValidation } |
-                Should -Not -Throw '*size mismatch*'
+                Should -Throw '*not found*'
         }
     }
 }

@@ -208,32 +208,25 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write([uint32]0x00000000)  # Reserved2
 
             # RAR Packed File block (block type 0x74)
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][PackSize(4)][UnpSize(4)][HostOS(1)]
+            #         [FileCRC(4)][DateTime(4)][Version(1)][Method(1)][NameSize(2)][Attr(4)][FileName(n)]
             $packedFileName = 'missing_source.mkv'
             $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
-            $packedBlockSize = 25 + 4 + $packedFileNameBytes.Length + 8  # Base + HIGH_* + name + 64-bit sizes
-            $bw.Write([uint16]0x0000)  # HEAD_CRC
-            $bw.Write([byte]0x74)       # HEAD_TYPE (file header)
-            $bw.Write([uint16]0x8000)   # HEAD_FLAGS (LONG_BLOCK set for 64-bit sizes)
-            $bw.Write([uint16]$packedBlockSize)
-
-            # Packed and unpacked sizes (32-bit low parts)
-            $bw.Write([uint32]1048576)  # PackSize (1MB)
-            $bw.Write([uint32]1048576)  # UnpSize (1MB)
-
-            $bw.Write([byte]0x00)       # HostOS
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)   # CRC
+            $bw.Write([byte]0x74)        # Type = RarPackedFile
+            $bw.Write([uint16]0x8000)    # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$packedBlockSize)  # HeadSize
+            $bw.Write([uint32]1048576)   # PackSize (1MB)
+            $bw.Write([uint32]1048576)   # UnpSize (1MB)
+            $bw.Write([byte]0x00)        # HostOS
             $bw.Write([uint32]0x12345678)  # FileCRC
-            $bw.Write([uint32]0x00000000)  # FileTime
-            $bw.Write([byte]0x15)       # UnpVer
-            $bw.Write([byte]0x30)       # Method
-            $bw.Write([uint16]$packedFileNameBytes.Length)
-            $bw.Write([uint32]0x00000020)  # FileAttr
-            # HIGH_PACK_SIZE and HIGH_UNP_SIZE (for 64-bit sizes)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write($packedFileNameBytes)
-
-            # ADD_SIZE for the packed data
-            $bw.Write([uint32]1048576)
+            $bw.Write([uint32]0x00000000)  # DateTime
+            $bw.Write([byte]0x15)        # Version
+            $bw.Write([byte]0x30)        # Method
+            $bw.Write([uint16]$packedFileNameBytes.Length)  # NameSize
+            $bw.Write([uint32]0x00000020)  # Attributes
+            $bw.Write($packedFileNameBytes)  # FileName
 
             $bw.Flush()
             [System.IO.File]::WriteAllBytes($script:missingSourceSrr, $ms.ToArray())
@@ -332,26 +325,26 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write([uint32]0x00000000)
 
             # RAR Packed File block with very small size
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][PackSize(4)][UnpSize(4)][HostOS(1)]
+            #         [FileCRC(4)][DateTime(4)][Version(1)][Method(1)][NameSize(2)][Attr(4)][FileName(n)]
             $packedFileName = 'test.txt'
             $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
-            $packedBlockSize = 25 + 4 + $packedFileNameBytes.Length + 8
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x74)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$packedBlockSize)
-            $bw.Write([uint32]10)  # PackSize
-            $bw.Write([uint32]10)  # UnpSize
-            $bw.Write([byte]0x00)
-            $bw.Write([uint32]0x12345678)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([byte]0x15)
-            $bw.Write([byte]0x30)
-            $bw.Write([uint16]$packedFileNameBytes.Length)
-            $bw.Write([uint32]0x00000020)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write($packedFileNameBytes)
-            $bw.Write([uint32]10)
+            # HeadSize = 7 (common) + 25 (core) + filename length
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x74)       # Type = RarPackedFile
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$packedBlockSize)  # HeadSize
+            $bw.Write([uint32]10)       # PackSize
+            $bw.Write([uint32]10)       # UnpSize
+            $bw.Write([byte]0x00)       # HostOS
+            $bw.Write([uint32]0x12345678)  # FileCRC
+            $bw.Write([uint32]0x00000000)  # DateTime
+            $bw.Write([byte]0x15)       # Version
+            $bw.Write([byte]0x30)       # Method
+            $bw.Write([uint16]$packedFileNameBytes.Length)  # NameSize
+            $bw.Write([uint32]0x00000020)  # Attributes
+            $bw.Write($packedFileNameBytes)  # FileName
 
             # RAR End Archive block
             $bw.Write([uint16]0x0000)
@@ -400,18 +393,19 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write($appName)
 
             # SRR Stored File block with NFO
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][AddSize(4)][NameLen(2)][FileName(n)][FileData]
             $storedFileName = 'release.nfo'
             $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($storedFileName)
             $storedContent = [System.Text.Encoding]::UTF8.GetBytes('Test NFO')
-            $storedBlockHeaderSize = 7 + 2 + $storedFileNameBytes.Length
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x6A)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$storedBlockHeaderSize)
-            $bw.Write([uint16]$storedFileNameBytes.Length)
-            $bw.Write($storedFileNameBytes)
-            $bw.Write([uint32]$storedContent.Length)
-            $bw.Write($storedContent)
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x6A)       # Type
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedContent.Length)   # AddSize (file size) first
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedContent)  # File data
 
             # SRR RAR File block
             $rarFileName = 'release.rar'
@@ -436,26 +430,25 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write([uint32]0x00000000)
 
             # RAR Packed File block
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][PackSize(4)][UnpSize(4)][HostOS(1)]
+            #         [FileCRC(4)][DateTime(4)][Version(1)][Method(1)][NameSize(2)][Attr(4)][FileName(n)]
             $packedFileName = 'test.dat'
             $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
-            $packedBlockSize = 25 + 4 + $packedFileNameBytes.Length + 8
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x74)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$packedBlockSize)
-            $bw.Write([uint32]100)
-            $bw.Write([uint32]100)
-            $bw.Write([byte]0x00)
-            $bw.Write([uint32]0x12345678)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([byte]0x15)
-            $bw.Write([byte]0x30)
-            $bw.Write([uint16]$packedFileNameBytes.Length)
-            $bw.Write([uint32]0x00000020)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write($packedFileNameBytes)
-            $bw.Write([uint32]100)
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x74)       # Type = RarPackedFile
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$packedBlockSize)  # HeadSize
+            $bw.Write([uint32]100)      # PackSize
+            $bw.Write([uint32]100)      # UnpSize
+            $bw.Write([byte]0x00)       # HostOS
+            $bw.Write([uint32]0x12345678)  # FileCRC
+            $bw.Write([uint32]0x00000000)  # DateTime
+            $bw.Write([byte]0x15)       # Version
+            $bw.Write([byte]0x30)       # Method
+            $bw.Write([uint16]$packedFileNameBytes.Length)  # NameSize
+            $bw.Write([uint32]0x00000020)  # Attributes
+            $bw.Write($packedFileNameBytes)  # FileName
 
             # RAR End Archive block
             $bw.Write([uint16]0x0000)
@@ -515,18 +508,19 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write($appName)
 
             # SRR Stored File block with subdirectory path
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][AddSize(4)][NameLen(2)][FileName(n)][FileData]
             $storedFileName = 'Sample/sample.txt'
             $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($storedFileName)
             $storedContent = [System.Text.Encoding]::UTF8.GetBytes('Sample content')
-            $storedBlockHeaderSize = 7 + 2 + $storedFileNameBytes.Length
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x6A)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$storedBlockHeaderSize)
-            $bw.Write([uint16]$storedFileNameBytes.Length)
-            $bw.Write($storedFileNameBytes)
-            $bw.Write([uint32]$storedContent.Length)
-            $bw.Write($storedContent)
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x6A)       # Type
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedContent.Length)   # AddSize (file size) first
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedContent)  # File data
 
             # SRR RAR File block
             $rarFileName = 'release.rar'
@@ -551,26 +545,25 @@ Describe 'Invoke-SrrRestore' {
             $bw.Write([uint32]0x00000000)
 
             # RAR Packed File block
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][PackSize(4)][UnpSize(4)][HostOS(1)]
+            #         [FileCRC(4)][DateTime(4)][Version(1)][Method(1)][NameSize(2)][Attr(4)][FileName(n)]
             $packedFileName = 'content.dat'
             $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
-            $packedBlockSize = 25 + 4 + $packedFileNameBytes.Length + 8
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x74)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$packedBlockSize)
-            $bw.Write([uint32]50)
-            $bw.Write([uint32]50)
-            $bw.Write([byte]0x00)
-            $bw.Write([uint32]0x12345678)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([byte]0x15)
-            $bw.Write([byte]0x30)
-            $bw.Write([uint16]$packedFileNameBytes.Length)
-            $bw.Write([uint32]0x00000020)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write([uint32]0x00000000)
-            $bw.Write($packedFileNameBytes)
-            $bw.Write([uint32]50)
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x74)       # Type = RarPackedFile
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$packedBlockSize)  # HeadSize
+            $bw.Write([uint32]50)       # PackSize
+            $bw.Write([uint32]50)       # UnpSize
+            $bw.Write([byte]0x00)       # HostOS
+            $bw.Write([uint32]0x12345678)  # FileCRC
+            $bw.Write([uint32]0x00000000)  # DateTime
+            $bw.Write([byte]0x15)       # Version
+            $bw.Write([byte]0x30)       # Method
+            $bw.Write([uint16]$packedFileNameBytes.Length)  # NameSize
+            $bw.Write([uint32]0x00000020)  # Attributes
+            $bw.Write($packedFileNameBytes)  # FileName
 
             # RAR End Archive block
             $bw.Write([uint16]0x0000)

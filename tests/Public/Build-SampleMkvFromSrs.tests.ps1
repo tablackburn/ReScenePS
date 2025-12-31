@@ -123,7 +123,8 @@ Describe 'Build-SampleMkvFromSrs' {
         BeforeAll {
             # Create track data file for lacing tests
             $script:lacingTrackFile = Join-Path $script:tempDir 'lacing-track.dat'
-            $trackData = [byte[]](1..500)  # Enough data for multiple frames
+            $trackData = [byte[]]::new(500)
+            for ($i = 0; $i -lt 500; $i++) { $trackData[$i] = [byte]($i % 256) }
             [System.IO.File]::WriteAllBytes($script:lacingTrackFile, $trackData)
         }
 

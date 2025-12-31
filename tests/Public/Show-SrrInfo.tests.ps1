@@ -33,7 +33,7 @@ Describe 'Show-SrrInfo' {
         # SRR Header block
         $bw.Write([uint16]0x6969)  # CRC placeholder
         $bw.Write([byte]0x69)      # HEAD_TYPE = SRR Header
-        $bw.Write([uint16]0x0000)  # HEAD_FLAGS
+        $bw.Write([uint16]0x0001)  # HEAD_FLAGS - 0x0001 indicates AppName is present
         $bw.Write([uint16]$headerSize)  # HEAD_SIZE
         $bw.Write([uint16]$appName.Length)  # AppName length
         $bw.Write($appName)        # AppName
@@ -138,19 +138,21 @@ Describe 'Show-SrrInfo' {
             $bw.Write([uint16]$appName.Length)
             $bw.Write($appName)
 
-            # Stored file block
+            # Stored file block (0x6A)
+            # Format: [CRC(2)][Type(1)][Flags(2)][HeadSize(2)][AddSize(4)][NameLen(2)][FileName(n)][FileData(AddSize)]
             $storedFileName = 'release.nfo'
             $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($storedFileName)
             $storedFileContent = [System.Text.Encoding]::UTF8.GetBytes('NFO content')
-            $storedBlockHeaderSize = 7 + 2 + $storedFileNameBytes.Length
-            $bw.Write([uint16]0x0000)
-            $bw.Write([byte]0x6A)
-            $bw.Write([uint16]0x8000)
-            $bw.Write([uint16]$storedBlockHeaderSize)
-            $bw.Write([uint16]$storedFileNameBytes.Length)
-            $bw.Write($storedFileNameBytes)
-            $bw.Write([uint32]$storedFileContent.Length)
-            $bw.Write($storedFileContent)
+            # HeadSize = 7 (common) + 4 (AddSize) + 2 (NameLen) + len(FileName)
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x6A)       # Type = SRR Stored File
+            $bw.Write([uint16]0x8000)   # Flags = LONG_BLOCK (has AddSize)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedFileContent.Length)  # AddSize (file size) - comes first in RawData
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedFileContent)  # Actual file data (skipped by parser)
 
             $bw.Flush()
             [System.IO.File]::WriteAllBytes($script:storedFileSrr, $ms.ToArray())
