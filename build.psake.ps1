@@ -15,11 +15,18 @@ properties {
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
 
     # Code coverage configuration
+    # Coverage files must point to Output directory where tests actually execute
+    # (Tests import module from Output/, not source directory)
+    $moduleName = 'ReScenePS'
+    $sourceManifest = Join-Path $PSScriptRoot "$moduleName/$moduleName.psd1"
+    $moduleVersion = (Import-PowerShellDataFile -Path $sourceManifest).ModuleVersion
+    $moduleOutDir = Join-Path $PSScriptRoot "Output/$moduleName/$moduleVersion"
+
     $PSBPreference.Test.CodeCoverage.Enabled = $true
     $PSBPreference.Test.CodeCoverage.Files = @(
-        "$PSScriptRoot/ReScenePS/Public/*.ps1"
-        "$PSScriptRoot/ReScenePS/Private/*.ps1"
-        "$PSScriptRoot/ReScenePS/Classes/*.ps1"
+        "$moduleOutDir/Public/*.ps1"
+        "$moduleOutDir/Private/*.ps1"
+        "$moduleOutDir/Classes/*.ps1"
     )
     $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
     $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
