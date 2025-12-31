@@ -1,4 +1,3 @@
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
 function Restore-SrsVideo {
     <#
     .SYNOPSIS
@@ -51,6 +50,7 @@ function Restore-SrsVideo {
         System.Boolean
         Returns $true if reconstruction was successful, $false otherwise.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
     [CmdletBinding()]
     [OutputType([bool])]
     param(

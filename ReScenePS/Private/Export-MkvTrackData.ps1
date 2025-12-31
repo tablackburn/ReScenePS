@@ -1,4 +1,3 @@
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', 'Compare-Bytes', Justification = 'Bytes refers to byte arrays being compared')]
 function Export-MkvTrackData {
     <#
     .SYNOPSIS
@@ -17,6 +16,7 @@ function Export-MkvTrackData {
     System.Boolean
     Returns $true if extraction was successful.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', 'Compare-Bytes', Justification = 'Bytes refers to byte arrays being compared')]
     [CmdletBinding()]
     [OutputType([bool])]
     param(

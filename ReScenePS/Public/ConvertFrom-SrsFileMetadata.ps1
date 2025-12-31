@@ -1,4 +1,3 @@
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
 function ConvertFrom-SrsFileMetadata {
     <#
     .SYNOPSIS
@@ -24,6 +23,7 @@ function ConvertFrom-SrsFileMetadata {
         System.Collections.Hashtable
         Hashtable with keys: FileData, Tracks (array), SrsSize
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
