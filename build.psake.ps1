@@ -10,30 +10,20 @@ properties {
     # Set this to $true to create a module with a monolithic PSM1
     $PSBPreference.Build.CompileModule = $false
     $PSBPreference.Help.DefaultLocale = 'en-US'
-    $PSBPreference.Test.OutputFile = 'out/testResults.xml'
+    # Use absolute paths for test output (relative paths resolve from tests directory)
+    $PSBPreference.Test.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'testResults.xml')
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
 
     # Code coverage configuration
-    $PSBPreference.Test.CodeCoverage.OutputFormat = 'JaCoCo'
-    $PSBPreference.Test.CodeCoverage.OutputFile = 'out/coverage.xml'
-    # Since CompileModule = $false, source files are copied to Output/ and tests run against them
-    # We must point coverage to the built module files since that's what gets executed
     $PSBPreference.Test.CodeCoverage.Enabled = $true
-    # Disable threshold - JaCoCo "instruction" coverage doesn't apply to PowerShell
-    # Actual coverage enforcement is handled by Codecov
-    $PSBPreference.Test.CodeCoverage.Threshold = 0
-
-    # Compute module output path (ModuleOutDir is null until Initialize-PSBuild runs)
-    $moduleName = 'ReScenePS'
-    $sourceManifest = Join-Path $PSScriptRoot "$moduleName/$moduleName.psd1"
-    $moduleVersion = (Import-PowerShellDataFile -Path $sourceManifest).ModuleVersion
-    $moduleOutDir = Join-Path $PSScriptRoot "Output/$moduleName/$moduleVersion"
-
     $PSBPreference.Test.CodeCoverage.Files = @(
-        (Join-Path $moduleOutDir 'Public/*.ps1'),
-        (Join-Path $moduleOutDir 'Private/*.ps1'),
-        (Join-Path $moduleOutDir 'Classes/*.ps1')
+        "$PSScriptRoot/ReScenePS/Public/*.ps1"
+        "$PSScriptRoot/ReScenePS/Private/*.ps1"
+        "$PSScriptRoot/ReScenePS/Classes/*.ps1"
     )
+    $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
+    $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
+    $PSBPreference.Test.CodeCoverage.OutputFileFormat = 'JaCoCo'
 
     # Test tools configuration
     $script:ToolsPath = Join-Path -Path $PSScriptRoot -ChildPath 'tools'
