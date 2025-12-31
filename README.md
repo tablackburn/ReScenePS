@@ -3,6 +3,7 @@
 [![PowerShell Gallery Downloads](https://img.shields.io/powershellgallery/dt/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS/)
 [![PowerShell Gallery Version](https://img.shields.io/powershellgallery/v/ReScenePS)](https://www.powershellgallery.com/packages/ReScenePS/)
 [![CI](https://img.shields.io/github/actions/workflow/status/tablackburn/ReScenePS/CI.yaml?branch=main)](https://github.com/tablackburn/ReScenePS/actions/workflows/CI.yaml)
+[![codecov](https://codecov.io/gh/tablackburn/ReScenePS/graph/badge.svg)](https://codecov.io/gh/tablackburn/ReScenePS)
 ![Platform](https://img.shields.io/powershellgallery/p/ReScenePS)
 [![AI Assisted](https://img.shields.io/badge/AI-Assisted-blue)](https://claude.ai)
 [![License](https://img.shields.io/github/license/tablackburn/ReScenePS)](LICENSE)

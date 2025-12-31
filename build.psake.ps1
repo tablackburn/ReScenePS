@@ -14,6 +14,8 @@ properties {
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
 
     # Code coverage configuration
+    $PSBPreference.Test.CodeCoverage.OutputFormat = 'JaCoCo'
+    $PSBPreference.Test.CodeCoverage.OutputFile = 'out/coverage.xml'
     # Since CompileModule = $false, source files are copied to Output/ and tests run against them
     # We must point coverage to the built module files since that's what gets executed
     $PSBPreference.Test.CodeCoverage.Enabled = $true

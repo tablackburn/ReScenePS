@@ -31,3 +31,10 @@ jobs:
     - name: Test
       shell: pwsh
       run: ./build.ps1 -Task Test -Bootstrap
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v5
+      with:
+        files: out/coverage.xml
+        fail_ci_if_error: false
+        verbose: true
