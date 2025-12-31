@@ -27,7 +27,8 @@ Describe 'Invoke-SrrReconstruct' {
             $outputPath = Join-Path $script:tempDir 'output'
             New-Item -Path $outputPath -ItemType Directory -Force | Out-Null
 
-            { Invoke-SrrReconstruct -SrrFile 'C:\NonExistent\release.srr' -SourcePath $script:tempDir -OutputPath $outputPath } | Should -Throw
+            $nonExistentSrr = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'release.srr'
+            { Invoke-SrrReconstruct -SrrFile $nonExistentSrr -SourcePath $script:tempDir -OutputPath $outputPath } | Should -Throw
         }
 
         It 'Throws when SourcePath does not exist' {
@@ -36,7 +37,8 @@ Describe 'Invoke-SrrReconstruct' {
             $data = [byte[]]@(0x69, 0x69, 0x69) + [byte[]](0..50)
             [System.IO.File]::WriteAllBytes($srrFile, $data)
 
-            { Invoke-SrrReconstruct -SrrFile $srrFile -SourcePath 'C:\NonExistent\Path' -OutputPath $script:tempDir } | Should -Throw
+            $nonExistentSource = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345'
+            { Invoke-SrrReconstruct -SrrFile $srrFile -SourcePath $nonExistentSource -OutputPath $script:tempDir } | Should -Throw
         }
     }
 

@@ -50,7 +50,8 @@ Describe 'Show-SrrInfo' {
         }
 
         It 'Throws when file does not exist' {
-            { Show-SrrInfo -SrrFile 'C:\NonExistent\File.srr' } | Should -Throw
+            $nonExistentFile = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'File.srr'
+            { Show-SrrInfo -SrrFile $nonExistentFile } | Should -Throw
         }
     }
 

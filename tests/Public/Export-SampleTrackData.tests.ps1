@@ -31,7 +31,8 @@ Describe 'Export-SampleTrackData' {
     Context 'Parameter validation' {
         It 'Throws when MainFilePath does not exist' {
             $outputPath = Join-Path $script:tempDir 'output1.bin'
-            { Export-SampleTrackData -MainFilePath 'C:\NonExistent\File.mkv' -MatchOffset 0 -DataLength 100 -OutputPath $outputPath } | Should -Throw '*not found*'
+            $nonExistentFile = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'File.mkv'
+            { Export-SampleTrackData -MainFilePath $nonExistentFile -MatchOffset 0 -DataLength 100 -OutputPath $outputPath } | Should -Throw '*not found*'
         }
 
         It 'Accepts valid parameters' {

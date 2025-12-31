@@ -26,8 +26,9 @@ Describe 'Build-SampleAviFromSrs' {
         It 'Throws when SourcePath does not exist' {
             $srsData = [byte[]](1..100)
             $outputPath = Join-Path $script:tempDir 'output.avi'
+            $nonExistentSource = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'source.avi'
 
-            { Build-SampleAviFromSrs -SrsData $srsData -SourcePath 'C:\NonExistent\source.avi' -OutputPath $outputPath } | Should -Throw '*not found*'
+            { Build-SampleAviFromSrs -SrsData $srsData -SourcePath $nonExistentSource -OutputPath $outputPath } | Should -Throw '*not found*'
         }
 
         It 'Throws for invalid SRS data' {

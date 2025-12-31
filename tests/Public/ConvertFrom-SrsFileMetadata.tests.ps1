@@ -23,7 +23,8 @@ Describe 'ConvertFrom-SrsFileMetadata' {
 
     Context 'Parameter validation' {
         It 'Throws when SrsFilePath does not exist' {
-            { ConvertFrom-SrsFileMetadata -SrsFilePath 'C:\NonExistent\sample.srs' } | Should -Throw '*not found*'
+            $nonExistentFile = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'sample.srs'
+            { ConvertFrom-SrsFileMetadata -SrsFilePath $nonExistentFile } | Should -Throw '*not found*'
         }
 
         It 'Throws when file is empty' {

@@ -26,15 +26,17 @@ Describe 'Restore-SrsVideo' {
         It 'Throws when SrsFilePath does not exist' {
             $sourcePath = Join-Path $script:tempDir 'source.mkv'
             [System.IO.File]::WriteAllBytes($sourcePath, [byte[]](1..100))
+            $nonExistentSrs = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'sample.srs'
 
-            { Restore-SrsVideo -SrsFilePath 'C:\NonExistent\sample.srs' -SourcePath $sourcePath -OutputPath 'output.mkv' } | Should -Throw '*not found*'
+            { Restore-SrsVideo -SrsFilePath $nonExistentSrs -SourcePath $sourcePath -OutputPath 'output.mkv' } | Should -Throw '*not found*'
         }
 
         It 'Throws when SourcePath does not exist' {
             $srsPath = Join-Path $script:tempDir 'sample.srs'
             [System.IO.File]::WriteAllBytes($srsPath, [byte[]](1..100))
+            $nonExistentSource = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'source.mkv'
 
-            { Restore-SrsVideo -SrsFilePath $srsPath -SourcePath 'C:\NonExistent\source.mkv' -OutputPath 'output.mkv' } | Should -Throw '*not found*'
+            { Restore-SrsVideo -SrsFilePath $srsPath -SourcePath $nonExistentSource -OutputPath 'output.mkv' } | Should -Throw '*not found*'
         }
     }
 

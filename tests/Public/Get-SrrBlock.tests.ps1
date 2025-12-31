@@ -28,7 +28,8 @@ Describe 'Get-SrrBlock' {
         }
 
         It 'Throws when file does not exist' {
-            { Get-SrrBlock -SrrFile 'C:\NonExistent\File.srr' } | Should -Throw
+            $nonExistentFile = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'File.srr'
+            { Get-SrrBlock -SrrFile $nonExistentFile } | Should -Throw
         }
 
         It 'Throws for empty file' {

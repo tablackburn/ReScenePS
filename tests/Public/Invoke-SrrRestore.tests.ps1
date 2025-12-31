@@ -148,7 +148,8 @@ Describe 'Invoke-SrrRestore' {
         }
 
         It 'Throws when specified SRR file does not exist' {
-            { Invoke-SrrRestore -SrrFile 'C:\NonExistent\release.srr' } | Should -Throw
+            $nonExistentPath = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'release.srr'
+            { Invoke-SrrRestore -SrrFile $nonExistentPath } | Should -Throw
         }
     }
 

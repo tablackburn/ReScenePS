@@ -25,7 +25,8 @@ Describe 'Build-SampleMkvFromSrs' {
     Context 'Parameter validation' {
         It 'Throws when SrsFilePath does not exist' {
             $outputPath = Join-Path $script:tempDir 'output.mkv'
-            { Build-SampleMkvFromSrs -SrsFilePath 'C:\NonExistent\sample.srs' -TrackDataFiles @{} -OutputMkvPath $outputPath } | Should -Throw '*not found*'
+            $nonExistentSrs = Join-Path ([System.IO.Path]::GetTempPath()) 'NonExistent_12345' 'sample.srs'
+            { Build-SampleMkvFromSrs -SrsFilePath $nonExistentSrs -TrackDataFiles @{} -OutputMkvPath $outputPath } | Should -Throw '*not found*'
         }
 
         It 'Accepts empty TrackDataFiles hashtable' {
