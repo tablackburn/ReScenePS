@@ -19,7 +19,9 @@ properties {
     # Since CompileModule = $false, source files are copied to Output/ and tests run against them
     # We must point coverage to the built module files since that's what gets executed
     $PSBPreference.Test.CodeCoverage.Enabled = $true
-    $PSBPreference.Test.CodeCoverage.Threshold = 0.65  # 65% minimum coverage
+    # Disable threshold - JaCoCo "instruction" coverage doesn't apply to PowerShell
+    # Actual coverage enforcement is handled by Codecov
+    $PSBPreference.Test.CodeCoverage.Threshold = 0
 
     # Compute module output path (ModuleOutDir is null until Initialize-PSBuild runs)
     $moduleName = 'ReScenePS'
