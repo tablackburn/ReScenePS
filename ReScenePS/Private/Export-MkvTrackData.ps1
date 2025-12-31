@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', 'Compare-Bytes', Justification = 'Bytes refers to byte arrays being compared')]
 function Export-MkvTrackData {
     <#
     .SYNOPSIS
@@ -11,8 +12,13 @@ function Export-MkvTrackData {
 
     .PARAMETER OutputFiles
     Hashtable to receive output file paths (keyed by track number).
+
+    .OUTPUTS
+    System.Boolean
+    Returns $true if extraction was successful.
     #>
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
         [string]$MainFilePath,

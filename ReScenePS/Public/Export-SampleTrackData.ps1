@@ -35,6 +35,7 @@ function Export-SampleTrackData {
         Returns $true if extraction was successful.
     #>
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
         [string]$MainFilePath,

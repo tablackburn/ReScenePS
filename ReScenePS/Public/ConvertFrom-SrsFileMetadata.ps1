@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
 function ConvertFrom-SrsFileMetadata {
     <#
     .SYNOPSIS
@@ -20,9 +21,11 @@ function ConvertFrom-SrsFileMetadata {
         Parses the SRS file and displays the match offset for each track.
 
     .OUTPUTS
+        System.Collections.Hashtable
         Hashtable with keys: FileData, Tracks (array), SrsSize
     #>
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)]
         [string]$SrsFilePath

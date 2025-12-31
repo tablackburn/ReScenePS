@@ -11,9 +11,11 @@ function Get-EbmlUIntLength {
     First byte read from EBML stream (0-255)
 
     .OUTPUTS
-    [int] Number of bytes (1-8)
+    System.Int32
+    Number of bytes (1-8)
     #>
     [CmdletBinding()]
+    [OutputType([int])]
     param(
         [Parameter(Mandatory=$true)]
         [byte]$LengthDescriptor

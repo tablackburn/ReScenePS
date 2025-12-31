@@ -17,9 +17,11 @@ function Get-EbmlUInt {
     Number of bytes to consume (from length descriptor)
 
     .OUTPUTS
-    [uint64] The decoded integer value
+    System.UInt64
+    The decoded integer value
     #>
     [CmdletBinding()]
+    [OutputType([uint64])]
     param(
         [Parameter(Mandatory=$true)]
         [byte[]]$Buffer,

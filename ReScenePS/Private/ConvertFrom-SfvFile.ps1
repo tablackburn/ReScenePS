@@ -7,9 +7,11 @@ function ConvertFrom-SfvFile {
     Path to the SFV file
 
     .OUTPUTS
-    [hashtable] Filename to CRC32 mapping
+    System.Collections.Hashtable
+    Filename to CRC32 mapping
     #>
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)]
         [string]$FilePath

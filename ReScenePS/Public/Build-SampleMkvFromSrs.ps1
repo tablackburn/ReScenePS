@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
 function Build-SampleMkvFromSrs {
     <#
     .SYNOPSIS
@@ -30,6 +31,7 @@ function Build-SampleMkvFromSrs {
         Returns $true if reconstruction was successful.
     #>
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
         [string]$SrsFilePath,

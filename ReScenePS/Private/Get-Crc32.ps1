@@ -41,9 +41,11 @@ function Get-Crc32 {
     Optional: Only hash N bytes from the offset
 
     .OUTPUTS
-    [uint32] CRC32 value
+    System.UInt32
+    CRC32 value
     #>
     [CmdletBinding()]
+    [OutputType([uint32])]
     param(
         [Parameter(Mandatory)]
         [string]$FilePath,

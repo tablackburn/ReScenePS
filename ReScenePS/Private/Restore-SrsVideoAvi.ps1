@@ -16,8 +16,13 @@ function Restore-SrsVideoAvi {
 
     .PARAMETER OutputPath
         Path for the output sample AVI.
+
+    .OUTPUTS
+        System.Boolean
+        Returns $true if reconstruction was successful.
     #>
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
         [string]$SrsFilePath,

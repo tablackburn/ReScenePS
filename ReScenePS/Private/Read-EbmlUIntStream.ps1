@@ -7,9 +7,11 @@ function Read-EbmlUIntStream {
     Stream object with Read method
 
     .OUTPUTS
-    [hashtable] @{ Value = [uint64], BytesConsumed = [int] }
+    System.Collections.Hashtable
+    Hashtable with Value (uint64) and BytesConsumed (int) keys
     #>
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory=$true)]
         $Stream

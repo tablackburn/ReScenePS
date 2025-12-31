@@ -1,3 +1,4 @@
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Srs is an acronym (Sample ReScene), not a plural')]
 function Build-SampleAviFromSrs {
     <#
     .SYNOPSIS
@@ -29,6 +30,7 @@ function Build-SampleAviFromSrs {
         Returns $true if reconstruction was successful.
     #>
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
         [byte[]]$SrsData,
@@ -376,12 +378,18 @@ function Build-SampleAviFromSrs {
     }
 }
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Chunks is an AVI file format term')]
 function Get-AviMoviChunks {
     <#
     .SYNOPSIS
         Parses an AVI file and returns all movi chunks with their positions.
+
+    .OUTPUTS
+        System.Collections.ArrayList
+        List of chunk objects with Id, Size, and Position properties.
     #>
     [CmdletBinding()]
+    [OutputType([System.Collections.ArrayList])]
     param(
         [Parameter(Mandatory)]
         [string]$FilePath

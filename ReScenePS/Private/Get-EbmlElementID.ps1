@@ -10,9 +10,11 @@ function Get-EbmlElementID {
     Starting position in buffer
 
     .OUTPUTS
-    [hashtable] @{ ElementID = [byte[]], Length = [int] }
+    System.Collections.Hashtable
+    Hashtable with ElementID (byte[]) and Length (int) keys
     #>
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory=$true)]
         [byte[]]$Buffer,
