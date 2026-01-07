@@ -885,6 +885,10 @@ Describe 'Restore-Release - Integration' -Skip:$script:skipFunctionalTests {
         }
 
         It 'Detects existing SRR and skips download' {
+            if (-not $script:srrdbAvailable) {
+                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
+                return
+            }
             if (-not $script:existingReleaseDir) {
                 Set-ItResult -Skipped -Because 'No sample SRR files available'
                 return
