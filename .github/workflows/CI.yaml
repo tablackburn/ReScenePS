@@ -15,40 +15,30 @@ jobs:
     name: PSScriptAnalyzer Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+    - name: Install PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+    - name: Run PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        $results = Invoke-ScriptAnalyzer -Path ./ReScenePS -Recurse -Settings PSGallery -ReportSummary
+        $errors = $results | Where-Object { $_.Severity -eq 'Error' }
 
-      - name: Cache PowerShell modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/powershell/Modules
-          key: ${{ runner.os }}-psmodules-lint-${{ hashFiles('build.depend.psd1') }}
-          restore-keys: |
-            ${{ runner.os }}-psmodules-lint-
+        if ($results) {
+          Write-Host "::group::PSScriptAnalyzer Results"
+          $results | Format-Table -AutoSize
+          Write-Host "::endgroup::"
+        }
 
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+        if ($errors) {
+          Write-Host "::error::PSScriptAnalyzer found $($errors.Count) error(s)"
+          exit 1
+        }
 
-      - name: Run PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          $results = Invoke-ScriptAnalyzer -Path ./ReScenePS -Recurse -Settings PSGallery -ReportSummary
-          $errors = $results | Where-Object { $_.Severity -eq 'Error' }
-
-          if ($results) {
-            Write-Host "::group::PSScriptAnalyzer Results"
-            $results | Format-Table -AutoSize
-            Write-Host "::endgroup::"
-          }
-
-          if ($errors) {
-            Write-Host "::error::PSScriptAnalyzer found $($errors.Count) error(s)"
-            exit 1
-          }
-
-          Write-Host "PSScriptAnalyzer passed with no errors"
+        Write-Host "PSScriptAnalyzer passed with no errors"
 
   test:
     name: Run Tests (${{ matrix.os }})
@@ -61,49 +51,26 @@ jobs:
       PAT_SERVER_URI: ${{ secrets.PAT_SERVER_URI }}
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache PowerShell modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Documents/PowerShell/Modules
-            ~/.local/share/powershell/Modules
-          key: ${{ runner.os }}-psmodules-${{ hashFiles('build.depend.psd1') }}
-          restore-keys: |
-            ${{ runner.os }}-psmodules-
-
-      - name: Free Disk Space (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Remove large preinstalled packages to free disk space for video downloads
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          df -h
-
-      - name: Free Disk Space (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          # Remove Xcode simulators and other large items
-          sudo rm -rf ~/Library/Developer/CoreSimulator/Devices/* 2>/dev/null || true
-          df -h
-
-      - name: Test
-        shell: pwsh
-        run: ./build.ps1 -Task Test -Bootstrap
-
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: out/coverage.xml
-          flags: ${{ matrix.os }}
-          fail_ci_if_error: false
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results-${{ matrix.os }}
-          path: out/
-          retention-days: 30
+    - uses: actions/checkout@v6
+    - name: Free Disk Space (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        # Remove large preinstalled packages to free disk space for video downloads
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        df -h
+    - name: Free Disk Space (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        # Remove Xcode simulators and other large items
+        sudo rm -rf ~/Library/Developer/CoreSimulator/Devices/* 2>/dev/null || true
+        df -h
+    - name: Test
+      shell: pwsh
+      run: ./build.ps1 -Task Test -Bootstrap
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v5
+      with:
+        files: out/coverage.xml
+        fail_ci_if_error: false
+        verbose: true
