@@ -87,7 +87,19 @@ Describe 'Restore-Release' {
             New-Item -Path $validDir -ItemType Directory -Force | Out-Null
 
             # Will fail due to missing SrrDBAutomationToolkit or srrDB lookup, but path validation should pass
-            { Restore-Release -Path $validDir -WhatIf -ErrorAction SilentlyContinue } | Should -Not -Throw '*does not exist*'
+            # We verify by checking the error message doesn't contain "does not exist" for the path
+            $errorMessage = $null
+            try {
+                Restore-Release -Path $validDir -WhatIf
+            }
+            catch {
+                $errorMessage = $_.Exception.Message
+            }
+
+            # If there's an error, it should NOT be about the path not existing
+            if ($errorMessage) {
+                $errorMessage | Should -Not -BeLike "*Directory does not exist*"
+            }
         }
     }
 
