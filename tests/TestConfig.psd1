@@ -214,6 +214,29 @@
     }
 
     # ==========================================================================
+    # RESTORE-RELEASE INTEGRATION TESTS
+    # Tests the full Restore-Release automation workflow
+    # Uses real srrdb queries to download SRR files and additional content
+    # ==========================================================================
+    RestoreReleaseTests = @(
+        # Release with proof image - tests additional file download
+        @{
+            ReleaseName     = 'The.Mummy.Resurrected.2014.PROPER.DVDRiP.X264-TASTE'
+            ReleaseType     = 'Movie-SD-x264'
+            HasProof        = $true
+            HasSrs          = $true
+            # Small release - good for testing
+        }
+        # Release with proof image - 1080p
+        @{
+            ReleaseName     = '009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa'
+            ReleaseType     = 'Movie-1080p-x264'
+            HasProof        = $true
+            HasSrs          = $true
+        }
+    )
+
+    # ==========================================================================
     # PLEX SOURCE MAPPINGS
     # Maps release names to Plex RatingKeys for downloading source files
     # To find RatingKeys, run:

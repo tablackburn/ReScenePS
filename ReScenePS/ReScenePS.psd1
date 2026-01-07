@@ -74,6 +74,7 @@ FunctionsToExport = @(
     'Show-SrrInfo'
     'Invoke-SrrReconstruct'
     'Invoke-SrrRestore'
+    'Restore-Release'
     'ConvertFrom-SrsFileMetadata'
     'Export-SampleTrackData'
     'Restore-SrsVideo'
