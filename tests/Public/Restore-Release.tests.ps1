@@ -185,24 +185,24 @@ Describe 'Restore-Release' {
     }
 
     Context 'srrDB integration' {
-        It 'Calls Search-SatRelease for release lookup' {
+        It 'Uses Get-SatReleaseFile for downloading release files' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Search-SatRelease'
+            $functionDef | Should -Match 'Get-SatReleaseFile'
         }
 
-        It 'Calls Get-SatRelease for release details' {
+        It 'Passes ReleaseName to Get-SatReleaseFile' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Get-SatRelease'
+            $functionDef | Should -Match 'Get-SatReleaseFile.*-ReleaseName'
         }
 
-        It 'Calls Get-SatSrr to download SRR file' {
+        It 'Passes OutPath to Get-SatReleaseFile' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Get-SatSrr'
+            $functionDef | Should -Match 'Get-SatReleaseFile.*-OutPath'
         }
 
-        It 'Calls Get-SatFile for additional files' {
+        It 'Uses PassThru to get download results' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Get-SatFile'
+            $functionDef | Should -Match 'Get-SatReleaseFile.*-PassThru'
         }
     }
 

@@ -147,117 +147,37 @@ function Restore-Release {
                     $srrPath = $existingSrr.FullName
                 }
                 else {
-                    # Step 2: Query srrDB for the release
-                    Write-Host "  [1] Searching srrDB for release..." -ForegroundColor Yellow
+                    # Step 2: Use Get-SatReleaseFile to download SRR and additional files
+                    Write-Host "  [1] Downloading release files from srrDB..." -ForegroundColor Yellow
 
-                    $searchResult = Search-SatRelease -ReleaseName $releaseName -ErrorAction SilentlyContinue
+                    if ($PSCmdlet.ShouldProcess($releaseName, "Download release files from srrDB")) {
+                        $downloadResult = Get-SatReleaseFile -ReleaseName $releaseName -OutPath $releaseDir -PassThru -ErrorAction Stop
+                        $srrPath = $downloadResult.SrrFile.FullName
+                        Write-Host "  [OK] Downloaded: $($downloadResult.SrrFile.Name)" -ForegroundColor Green
 
-                    if (-not $searchResult) {
-                        # Try fuzzy search with release name as query
-                        Write-Verbose "  Exact match not found, trying fuzzy search..."
-                        $searchResult = Search-SatRelease -Query $releaseName -MaxResults 1 -ErrorAction SilentlyContinue
+                        if ($downloadResult.AdditionalFiles.Count -gt 0) {
+                            foreach ($file in $downloadResult.AdditionalFiles) {
+                                Write-Host "  [OK] Downloaded: $($file.Name)" -ForegroundColor Green
+                            }
+                        }
                     }
-
-                    if (-not $searchResult) {
-                        Write-Warning "  Release not found on srrDB: $releaseName"
+                    else {
+                        Write-Host "  [SKIP] Download (WhatIf)" -ForegroundColor Gray
                         $script:results.Skipped++
                         $script:results.Details.Add([PSCustomObject]@{
                             Release = $releaseName
                             Status  = 'Skipped'
-                            Reason  = 'Not found on srrDB'
+                            Reason  = 'WhatIf mode'
                         })
                         continue
                     }
-
-                    # Use exact match if available, otherwise first fuzzy result
-                    $matchedRelease = if ($searchResult -is [array]) {
-                        $searchResult | Where-Object { $_.Release -eq $releaseName } | Select-Object -First 1
-                        if (-not $_) { $searchResult[0] }
-                    }
-                    else {
-                        $searchResult
-                    }
-
-                    $actualReleaseName = $matchedRelease.Release
-                    Write-Host "  [OK] Found: $actualReleaseName" -ForegroundColor Green
-
-                    # Step 3: Get full release details
-                    Write-Host "  [2] Getting release details..." -ForegroundColor Yellow
-                    $releaseDetails = Get-SatRelease -ReleaseName $actualReleaseName -ErrorAction Stop
-
-                    # Step 4: Download SRR file
-                    Write-Host "  [3] Downloading SRR file..." -ForegroundColor Yellow
-
-                    if ($PSCmdlet.ShouldProcess($actualReleaseName, "Download SRR file")) {
-                        Get-SatSrr -ReleaseName $actualReleaseName -OutPath $releaseDir -ErrorAction Stop
-                        $srrPath = Join-Path $releaseDir "$actualReleaseName.srr"
-                        Write-Host "  [OK] Downloaded: $actualReleaseName.srr" -ForegroundColor Green
-                    }
-                    else {
-                        Write-Host "  [SKIP] SRR download (WhatIf)" -ForegroundColor Gray
-                        $script:results.Skipped++
-                        continue
-                    }
-
-                    # Step 5: Parse SRR to get stored files list
-                    Write-Host "  [4] Analyzing SRR contents..." -ForegroundColor Yellow
-
-                    $reader = [BlockReader]::new($srrPath)
-                    $blocks = $reader.ReadAllBlocks()
-                    $reader.Close()
-
-                    $storedInSrr = $blocks | Where-Object { $_ -is [SrrStoredFileBlock] } | ForEach-Object { $_.FileName }
-                    Write-Host "  Files stored in SRR: $($storedInSrr.Count)" -ForegroundColor Gray
-
-                    # Step 6: Download additional files not in SRR (proof images, etc.)
-                    if ($releaseDetails.Files -and $releaseDetails.Files.Count -gt 0) {
-                        Write-Host "  [5] Checking for additional files on srrDB..." -ForegroundColor Yellow
-
-                        foreach ($file in $releaseDetails.Files) {
-                            $fileName = $file.name
-                            if (-not $fileName) { continue }
-
-                            # Skip if already in SRR stored files
-                            $isStoredInSrr = $storedInSrr | Where-Object {
-                                $_ -eq $fileName -or $_ -like "*/$fileName" -or $_ -like "*\$fileName"
-                            }
-
-                            if ($isStoredInSrr) {
-                                Write-Verbose "  Skipping $fileName (stored in SRR)"
-                                continue
-                            }
-
-                            # Skip SRR and SRS files (SRS should be in SRR)
-                            if ($fileName -match '\.(srr|srs)$') {
-                                continue
-                            }
-
-                            # Download the file
-                            $targetPath = Join-Path $releaseDir $fileName
-
-                            if (Test-Path $targetPath) {
-                                Write-Host "  [SKIP] $fileName (already exists)" -ForegroundColor Gray
-                                continue
-                            }
-
-                            if ($PSCmdlet.ShouldProcess("$actualReleaseName/$fileName", "Download additional file")) {
-                                try {
-                                    Get-SatFile -ReleaseName $actualReleaseName -FileName $fileName -OutPath $releaseDir -ErrorAction Stop
-                                    Write-Host "  [OK] Downloaded: $fileName" -ForegroundColor Green
-                                }
-                                catch {
-                                    Write-Warning "  Failed to download $fileName`: $($_.Exception.Message)"
-                                }
-                            }
-                        }
-                    }
                 }
 
-                # Step 7: Run the restoration
-                Write-Host "  [6] Running SRR restoration..." -ForegroundColor Yellow
+                # Step 3: Run the restoration
+                Write-Host "  [2] Running SRR restoration..." -ForegroundColor Yellow
 
                 $restoreParams = @{
-                    SrrFile = $srrPath
+                    SrrFile    = $srrPath
                     SourcePath = if ($SourcePath) { $SourcePath } else { $releaseDir }
                     OutputPath = $releaseDir
                 }
