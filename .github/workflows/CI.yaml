@@ -15,7 +15,7 @@ jobs:
       PAT_SERVER_URI: ${{ secrets.PAT_SERVER_URI }}
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Free Disk Space (Linux)
       if: runner.os == 'Linux'
       run: |
