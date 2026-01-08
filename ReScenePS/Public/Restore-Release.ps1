@@ -81,16 +81,6 @@ function Restore-Release {
     )
 
     begin {
-        # Check for required module
-        if (-not (Get-Module -Name SrrDBAutomationToolkit -ListAvailable)) {
-            throw "SrrDBAutomationToolkit module is required but not installed. Install it with: Install-Module SrrDBAutomationToolkit"
-        }
-
-        # Import the module if not already loaded
-        if (-not (Get-Module -Name SrrDBAutomationToolkit)) {
-            Import-Module SrrDBAutomationToolkit -ErrorAction Stop
-        }
-
         # Resolve path
         $Path = (Resolve-Path -Path $Path).Path
 

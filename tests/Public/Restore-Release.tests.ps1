@@ -103,12 +103,12 @@ Describe 'Restore-Release' {
         }
     }
 
-    Context 'Module dependency check' {
-        It 'Checks for SrrDBAutomationToolkit module' {
-            # The function should check for the module
-            # This test verifies the function structure includes the check
-            $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'SrrDBAutomationToolkit'
+    Context 'Module dependency' {
+        It 'Requires SrrDBAutomationToolkit via module manifest' {
+            $manifest = Import-PowerShellDataFile "$PSScriptRoot/../../ReScenePS/ReScenePS.psd1"
+            $manifest.RequiredModules | Should -Not -BeNullOrEmpty
+            $requiredModule = $manifest.RequiredModules | Where-Object { $_.ModuleName -eq 'SrrDBAutomationToolkit' }
+            $requiredModule | Should -Not -BeNull
         }
     }
 
