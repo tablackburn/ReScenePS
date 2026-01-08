@@ -130,6 +130,16 @@ Describe 'Restore-Release' {
             $functionDef | Should -Match 'Recurse'
             $functionDef | Should -Match 'Get-ChildItem.*Directory'
         }
+
+        It 'Warns when no subdirectories found in Recurse mode' {
+            $emptyDir = Join-Path $script:tempDir 'empty-recurse-test'
+            New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
+
+            $result = Restore-Release -Path $emptyDir -Recurse -WarningVariable warnings 3>&1
+            $warnings | Should -Match 'No directories found'
+
+            Remove-Item -Path $emptyDir -Force -Recurse
+        }
     }
 
     Context 'Existing SRR file detection' {
