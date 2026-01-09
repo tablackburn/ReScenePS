@@ -174,6 +174,13 @@ Describe 'Restore-Release' {
             $functionDef | Should -Match '\.srr'
             $functionDef | Should -Match 'SRR already exists'
         }
+
+        It 'Skips restoration in WhatIf mode when SRR exists' {
+            $result = Restore-Release -Path $script:existingSrrDir -WhatIf
+            $result.Skipped | Should -Be 1
+            $result.Details[0].Status | Should -Be 'Skipped'
+            $result.Details[0].Reason | Should -Be 'WhatIf mode'
+        }
     }
 
     Context 'Output results' {
