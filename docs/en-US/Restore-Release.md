@@ -186,7 +186,7 @@ Accept wildcard characters: False
 ```
 
 ### -ProgressAction
-{{ Fill ProgressAction Description }}
+Specifies how the cmdlet responds to progress updates.
 
 ```yaml
 Type: ActionPreference

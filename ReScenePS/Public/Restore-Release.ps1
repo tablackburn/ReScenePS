@@ -164,26 +164,37 @@ function Restore-Release {
                 }
 
                 # Step 3: Run the restoration
-                Write-Host "  [2] Running SRR restoration..." -ForegroundColor Yellow
+                if ($PSCmdlet.ShouldProcess($releaseName, "Run SRR restoration")) {
+                    Write-Host "  [2] Running SRR restoration..." -ForegroundColor Yellow
 
-                $restoreParams = @{
-                    SrrFile    = $srrPath
-                    SourcePath = if ($SourcePath) { $SourcePath } else { $releaseDir }
-                    OutputPath = $releaseDir
+                    $restoreParams = @{
+                        SrrFile    = $srrPath
+                        SourcePath = if ($SourcePath) { $SourcePath } else { $releaseDir }
+                        OutputPath = $releaseDir
+                    }
+
+                    if ($KeepSrr) { $restoreParams['KeepSrr'] = $true }
+                    if ($KeepSources) { $restoreParams['KeepSources'] = $true }
+                    if ($SkipValidation) { $restoreParams['SkipValidation'] = $true }
+
+                    Invoke-SrrRestore @restoreParams
+
+                    $script:results.Succeeded++
+                    $script:results.Details.Add([PSCustomObject]@{
+                        Release = $releaseName
+                        Status  = 'Succeeded'
+                        Reason  = $null
+                    })
                 }
-
-                if ($KeepSrr) { $restoreParams['KeepSrr'] = $true }
-                if ($KeepSources) { $restoreParams['KeepSources'] = $true }
-                if ($SkipValidation) { $restoreParams['SkipValidation'] = $true }
-
-                Invoke-SrrRestore @restoreParams
-
-                $script:results.Succeeded++
-                $script:results.Details.Add([PSCustomObject]@{
-                    Release = $releaseName
-                    Status  = 'Succeeded'
-                    Reason  = $null
-                })
+                else {
+                    Write-Host "  [SKIP] Restoration (WhatIf)" -ForegroundColor Gray
+                    $script:results.Skipped++
+                    $script:results.Details.Add([PSCustomObject]@{
+                        Release = $releaseName
+                        Status  = 'Skipped'
+                        Reason  = 'WhatIf mode'
+                    })
+                }
             }
             catch {
                 Write-Host "  [X] Failed: $($_.Exception.Message)" -ForegroundColor Red
