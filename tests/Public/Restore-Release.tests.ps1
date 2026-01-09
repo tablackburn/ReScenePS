@@ -246,17 +246,53 @@ Describe 'Restore-Release' {
     }
 
     Context 'Error handling in batch mode' {
+        BeforeAll {
+            $script:errorTestDir = Join-Path $script:tempDir 'error-test'
+            New-Item -Path $script:errorTestDir -ItemType Directory -Force | Out-Null
+
+            # Create subdirectories that will fail (no SRR, invalid release names)
+            $script:failDir1 = Join-Path $script:errorTestDir 'Invalid.Release.Name.1-FAIL'
+            $script:failDir2 = Join-Path $script:errorTestDir 'Invalid.Release.Name.2-FAIL'
+            New-Item -Path $script:failDir1 -ItemType Directory -Force | Out-Null
+            New-Item -Path $script:failDir2 -ItemType Directory -Force | Out-Null
+        }
+
         It 'Continues processing when one release fails in -Recurse mode' {
-            $functionDef = (Get-Command Restore-Release).Definition
-            # The function should catch errors and continue when in Recurse mode
-            $functionDef | Should -Match 'catch'
-            $functionDef | Should -Match 'continue'
+            # This will fail because:
+            # 1. No SRR files exist in the directories
+            # 2. Get-SatReleaseFile will fail (invalid release names)
+            $result = Restore-Release -Path $script:errorTestDir -Recurse -ErrorAction SilentlyContinue
+
+            # Should have processed both directories
+            $result.Processed | Should -Be 2
+
+            # Both should have failed
+            $result.Failed | Should -Be 2
+
+            # Details should show failure reasons
+            $result.Details | Where-Object { $_.Status -eq 'Failed' } | Should -HaveCount 2
         }
 
         It 'Throws when single release fails without -Recurse' {
-            $functionDef = (Get-Command Restore-Release).Definition
-            # The function should re-throw errors when not in Recurse mode
-            $functionDef | Should -Match 'throw'
+            # This will fail because no SRR exists and Get-SatReleaseFile will fail
+            { Restore-Release -Path $script:failDir1 -ErrorAction Stop } | Should -Throw
+        }
+
+        It 'Records failure reason in results' {
+            $result = Restore-Release -Path $script:errorTestDir -Recurse -ErrorAction SilentlyContinue
+
+            # Each failure should have a reason
+            foreach ($detail in $result.Details) {
+                if ($detail.Status -eq 'Failed') {
+                    $detail.Reason | Should -Not -BeNullOrEmpty
+                }
+            }
+        }
+
+        AfterAll {
+            if ($script:errorTestDir -and (Test-Path -Path $script:errorTestDir)) {
+                Remove-Item -Path $script:errorTestDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
