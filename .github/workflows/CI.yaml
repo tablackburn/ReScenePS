@@ -1,11 +1,47 @@
 name: CI
+
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    name: PSScriptAnalyzer Lint
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+        Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+    - name: Run PSScriptAnalyzer
+      shell: pwsh
+      run: |
+        $results = Invoke-ScriptAnalyzer -Path ./ReScenePS -Recurse -Settings PSGallery -ReportSummary
+        $errors = $results | Where-Object { $_.Severity -eq 'Error' }
+
+        if ($results) {
+          Write-Host "::group::PSScriptAnalyzer Results"
+          $results | Format-Table -AutoSize
+          Write-Host "::endgroup::"
+        }
+
+        if ($errors) {
+          Write-Host "::error::PSScriptAnalyzer found $($errors.Count) error(s)"
+          exit 1
+        }
+
+        Write-Host "PSScriptAnalyzer passed with no errors"
+
   test:
-    name: Run Tests
+    name: Run Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
