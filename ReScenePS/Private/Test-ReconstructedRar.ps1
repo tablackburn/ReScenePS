@@ -48,7 +48,7 @@ function Test-ReconstructedRar {
             }
 
             $expectedCrc = $sfvData[$rarFile]
-            $actualCrc = Get-Crc32 -FilePath $rarPath
+            $actualCrc = [Convert]::ToUInt32((CRC\Get-CRC32 -Path $rarPath).Hash, 16)
 
             if ($actualCrc -eq $expectedCrc) {
                 Write-Host "    [OK] $rarFile" -ForegroundColor Green

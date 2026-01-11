@@ -106,23 +106,6 @@ release.rar AABBCCDD
         }
     }
 
-    Context 'Get-Crc32 integration' {
-
-        BeforeAll {
-            $script:crcTestFile = Join-Path $script:tempDir 'crc-test.bin'
-            # "test" has CRC32 of 0xD87F7E0C = 3632233996
-            [System.IO.File]::WriteAllBytes($script:crcTestFile, [System.Text.Encoding]::ASCII.GetBytes('test'))
-        }
-
-        It 'Calculates CRC32 for RAR files' {
-            InModuleScope 'ReScenePS' -Parameters @{ file = $script:crcTestFile } {
-                $result = Get-Crc32 -FilePath $file
-
-                $result | Should -Be 3632233996  # Known CRC32 of "test"
-            }
-        }
-    }
-
     Context 'Temp file cleanup' {
 
         It 'Uses temp file for extracted SFV' {

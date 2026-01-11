@@ -21,14 +21,12 @@ BeforeAll {
     $script:tempDir = New-TestTempDirectory -Prefix 'PerfTest'
 
     # Performance thresholds (in milliseconds)
-    # Note: CRC32 uses pure PowerShell implementation which is slower than compiled code
-    # but more portable (no external dependencies)
     $script:Thresholds = @{
         ByteArrayCompare1KB    = 10      # 1KB array comparison
         ByteArrayCompare1MB    = 3500    # 1MB array comparison (increased for CI variance)
         EbmlParse1000Elements  = 750     # Parse 1000 EBML elements (increased for CI variance)
         BlockReaderInit        = 50      # BlockReader initialization
-        CRC32Calc1MB           = 5000    # CRC32 of 1MB file (pure PowerShell implementation)
+        CRC32Calc1MB           = 500     # CRC32 of 1MB file (using CRC module)
     }
 }
 
@@ -159,7 +157,7 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
         It 'Calculates CRC32 of 1MB file within threshold' {
             InModuleScope 'ReScenePS' -Parameters @{ file = $script:crcTestFile; threshold = $script:Thresholds.CRC32Calc1MB } {
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                $null = Get-Crc32 -FilePath $file
+                $null = [Convert]::ToUInt32((CRC\Get-CRC32 -Path $file).Hash, 16)
                 $stopwatch.Stop()
 
                 $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual $threshold -Because "1MB CRC32 should complete under ${threshold}ms"
