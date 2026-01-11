@@ -56,10 +56,6 @@ RequiredModules = @(
         ModuleName    = 'SrrDBAutomationToolkit'
         ModuleVersion = '0.4.0'
     }
-    @{
-        ModuleName    = 'CRC'
-        ModuleVersion = '0.0.2'
-    }
 )
 
 # Assemblies that must be loaded prior to importing this module

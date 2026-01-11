@@ -483,7 +483,7 @@ function Invoke-SrrRestore {
                         }
 
                         $expectedCrc = $sfvData[$rarFile]
-                        $actualCrc = [Convert]::ToUInt32((CRC\Get-CRC32 -Path $rarPath).Hash, 16)
+                        $actualCrc = Get-Crc32 -FilePath $rarPath
 
                         if ($actualCrc -eq $expectedCrc) {
                             Write-Host "  [OK] $rarFile" -ForegroundColor Green

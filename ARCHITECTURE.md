@@ -30,7 +30,6 @@ This installs all build dependencies (PSDepend, Pester 5, psake, BuildHelpers, P
 ### Runtime Dependencies
 
 The module requires these PowerShell modules (automatically installed when installing from PowerShell Gallery):
-- **CRC** (≥0.0.2) - Fast CRC32 calculation using compiled C#
 - **SrrDBAutomationToolkit** (≥0.4.0) - srrDB.com API integration for release lookup
 
 ### Primary Development Loop
@@ -107,6 +106,7 @@ pwsh -Command "Import-Module ./ReScenePS/ReScenePS.psd1 -Force"
 - `Export-MkvTrackData` - Extract track data from MKV files
 - `ConvertFrom-SfvFile` - Parse SFV checksum files
 - `Test-ReconstructedRar` - Validate RAR CRCs against SFV
+- `Get-Crc32` - CRC32 calculation (compiled C# via Add-Type)
 - `Compare-ByteArray` - Binary data comparison
 - `ConvertTo-ByteString` - Binary data formatting for debugging
 

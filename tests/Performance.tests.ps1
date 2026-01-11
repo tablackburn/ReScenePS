@@ -157,7 +157,7 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
         It 'Calculates CRC32 of 1MB file within threshold' {
             InModuleScope 'ReScenePS' -Parameters @{ file = $script:crcTestFile; threshold = $script:Thresholds.CRC32Calc1MB } {
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                $null = [Convert]::ToUInt32((CRC\Get-CRC32 -Path $file).Hash, 16)
+                $null = Get-Crc32 -FilePath $file
                 $stopwatch.Stop()
 
                 $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual $threshold -Because "1MB CRC32 should complete under ${threshold}ms"

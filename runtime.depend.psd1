@@ -10,7 +10,4 @@
     'SrrDBAutomationToolkit' = @{
         Version = '0.4.0'
     }
-    'CRC' = @{
-        Version = '0.0.2'
-    }
 }
