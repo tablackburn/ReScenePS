@@ -286,10 +286,22 @@ function Invoke-SrrRestore {
 
         Write-Host "  RAR volumes to reconstruct: $($rarVolumes.Count)" -ForegroundColor Gray
 
-        # Sort volumes: .rar first, then .r00, .r01, etc
+        # Sort volumes by volume number:
+        # - Old naming: .part01.rar, .part02.rar, ... (partXX determines order)
+        # - New naming: .rar (first), then .r00, .r01, ... (extension determines order)
         $sortedVolumes = $rarVolumes.Keys | Sort-Object {
-            if ($_ -match '\.rar$') { 0 }
-            elseif ($_ -match '\.r(\d+)$') { [int]$matches[1] + 1 }
+            if ($_ -match '\.part(\d+)\.rar$') {
+                # Old naming: .part01.rar = 1, .part02.rar = 2, etc.
+                [int]$matches[1]
+            }
+            elseif ($_ -match '(?<!\.part\d+)\.rar$') {
+                # New naming: .rar (not .partXX.rar) = 0 (first volume)
+                0
+            }
+            elseif ($_ -match '\.r(\d+)$') {
+                # New naming: .r00 = 1, .r01 = 2, etc.
+                [int]$matches[1] + 1
+            }
             else { 999 }
         }
 

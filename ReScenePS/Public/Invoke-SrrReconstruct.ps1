@@ -116,7 +116,26 @@ function Invoke-SrrReconstruct {
     $sourceFileOffset = [long]0
 
     try {
-        $sortedVolumes = $rarVolumes.Keys | Sort-Object { if ($_ -match '\.rar$') { 0 } elseif ($_ -match '\.r(\d+)$') { [int]$matches[1] + 1 } else { 999 } }
+        # Sort volumes by volume number:
+        # - Old naming: .part01.rar, .part02.rar, ... (partXX determines order)
+        # - New naming: .rar (first), then .r00, .r01, ... (extension determines order)
+        $sortedVolumes = $rarVolumes.Keys | Sort-Object {
+            if ($_ -match '\.part(\d+)\.rar$') {
+                # Old naming: .part01.rar = 1, .part02.rar = 2, etc.
+                [int]$matches[1]
+            }
+            elseif ($_ -match '(?<!\.part\d+)\.rar$') {
+                # New naming: .rar (not .partXX.rar) = 0 (first volume)
+                0
+            }
+            elseif ($_ -match '\.r(\d+)$') {
+                # New naming: .r00 = 1, .r01 = 2, etc.
+                [int]$matches[1] + 1
+            }
+            else {
+                999
+            }
+        }
         foreach ($volumeName in $sortedVolumes) {
             $volumeData = $rarVolumes[$volumeName]
             $outputFile = Join-Path $OutputPath $volumeName
