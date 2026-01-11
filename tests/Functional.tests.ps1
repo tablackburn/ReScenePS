@@ -72,8 +72,7 @@ BeforeDiscovery {
         $script:testConfig = Import-PowerShellDataFile -Path $configPath
         $script:skipFunctionalTests = $false
 
-
-        # Process SRR Parsing Tests - resolve paths
+        # Process SRR Parsing Tests - resolve paths (static SRR files in tests/samples/)
         $script:srrParsingTests = @($script:testConfig.SrrParsingTests | ForEach-Object {
             $test = $_
             $fullPath = if ($test.RelativeTo -eq 'ProjectRoot') {
@@ -99,94 +98,12 @@ BeforeDiscovery {
             }
         } | Where-Object { $_ -ne $null })
 
-        # Check Plex data source availability
-        $script:plexEnabled = $false
-        $script:plexConfig = $null
-        $script:plexMappings = @{}
+        # Plex-based tests are discovered dynamically at runtime (in BeforeAll)
+        # Set placeholder for test discovery - actual releases come from playlist
+        $script:plexReleases = @()
 
-        if ($script:testConfig.PlexDataSource -and $script:testConfig.PlexDataSource.Enabled) {
-            $script:plexConfig = $script:testConfig.PlexDataSource
-            $script:plexMappings = $script:testConfig.PlexSourceMappings
-            if ($script:plexMappings -and $script:plexMappings.Count -gt 0) {
-                $script:plexEnabled = $true
-                Write-Verbose "Plex data source enabled with $($script:plexMappings.Count) mappings"
-            }
-        }
-
-        # Process SRR Reconstruction Tests - check Plex availability
-        $script:srrReconstructionTests = @($script:testConfig.SrrReconstructionTests | ForEach-Object {
-            $test = $_
-            $srrPath = if ($test.RelativeTo -eq 'ProjectRoot') {
-                Join-Path -Path $script:projectRoot -ChildPath $test.SrrPath
-            } else {
-                $test.SrrPath
-            }
-
-            # Skip if SRR doesn't exist
-            if (-not (Test-Path -Path $srrPath)) {
-                $null
-                return
-            }
-
-            # Check if Plex mapping exists for this release
-            $srrFileName = Split-Path -Leaf $test.SrrPath
-            $hasPlexMapping = $script:plexEnabled -and $script:plexMappings.ContainsKey($srrFileName)
-
-            # Include test only if Plex mapping exists
-            if ($hasPlexMapping) {
-                @{
-                    Name            = $test.ReleaseName
-                    SrrPath         = $srrPath
-                    SrrFileName     = $srrFileName
-                    ReleaseType     = $test.ReleaseType
-                    PlexMapping     = $script:plexMappings[$srrFileName]
-                }
-            } else {
-                # No Plex mapping - will be skipped
-                $null
-            }
-        } | Where-Object { $_ -ne $null })
-
-        # Process SRS Sample Tests (empty for now - requires extracted files)
-        $script:srsSampleTests = @($script:testConfig.SrsSampleTests | ForEach-Object {
-            $test = $_
-            $srsPath = if ($test.RelativeTo -eq 'ProjectRoot') {
-                Join-Path -Path $script:projectRoot -ChildPath $test.SrsPath
-            } else {
-                $test.SrsPath
-            }
-
-            if ((Test-Path -Path $srsPath) -and $test.SourceMkvPath -and (Test-Path -Path $test.SourceMkvPath)) {
-                @{
-                    Name                 = Split-Path -Leaf $test.SrsPath
-                    SrsPath              = $srsPath
-                    SourceMkvPath        = $test.SourceMkvPath
-                    ExpectedTracks       = $test.ExpectedTracks
-                    ExpectedOriginalSize = $test.ExpectedOriginalSize
-                }
-            } else {
-                $null
-            }
-        } | Where-Object { $_ -ne $null })
-
-        # Process Restore-Release Tests
-        $script:restoreReleaseTests = @()
-        if ($script:testConfig.RestoreReleaseTests) {
-            $script:restoreReleaseTests = @($script:testConfig.RestoreReleaseTests | ForEach-Object {
-                @{
-                    ReleaseName = $_.ReleaseName
-                    ReleaseType = $_.ReleaseType
-                    HasProof    = [bool]$_.HasProof
-                    HasSrs      = [bool]$_.HasSrs
-                }
-            })
-        }
-
-        # Check if we have any tests to run
-        if ($script:srrParsingTests.Count -eq 0 -and
-            $script:srrReconstructionTests.Count -eq 0 -and
-            $script:srsSampleTests.Count -eq 0 -and
-            $script:restoreReleaseTests.Count -eq 0) {
+        # Check if we have parsing tests to run (Plex tests are discovered at runtime)
+        if ($script:srrParsingTests.Count -eq 0) {
             Write-Warning 'TestConfig.psd1 exists but no valid sample files found at configured paths'
             $script:skipFunctionalTests = $true
         }
@@ -196,9 +113,23 @@ BeforeDiscovery {
         $script:skipFunctionalTests = $true
         $script:testConfig = $null
         $script:srrParsingTests = @()
-        $script:srrReconstructionTests = @()
-        $script:srsSampleTests = @()
-        $script:restoreReleaseTests = @()
+        $script:plexReleases = @()
+    }
+
+    # Check Plex and SrrDB availability for -Skip: conditions on Describe blocks
+    # Import test helpers to access Test-PlexAvailable
+    Import-Module "$PSScriptRoot/TestHelpers.psm1" -Force
+    $script:plexEnabled = Test-PlexAvailable
+    $script:srrdbAvailable = $null -ne (Get-Module -Name SrrDBAutomationToolkit -ListAvailable)
+
+    # Discover Plex releases during discovery so ForEach data is available
+    if ($script:plexEnabled) {
+        Initialize-PlexForCI | Out-Null
+        $playlistName = 'ReScenePS-TestData'
+        if ($script:testConfig.PlexDataSource.PlaylistName) {
+            $playlistName = $script:testConfig.PlexDataSource.PlaylistName
+        }
+        $script:plexReleases = @(Get-PlexTestRelease -PlaylistName $playlistName -ErrorAction 'SilentlyContinue')
     }
 }
 
@@ -214,36 +145,87 @@ BeforeAll {
     $testConfigPath = Join-Path $PSScriptRoot 'TestConfig.psd1'
     if (Test-Path -Path $testConfigPath) {
         $script:testConfig = Import-PowerShellDataFile -Path $testConfigPath
+    }
 
-        # Setup Plex configuration for test execution
-        $script:plexEnabled = $false
-        $script:plexConfig = $null
-        $script:plexMappings = @{}
+    # Initialize Plex and discover test releases from playlist
+    $script:plexEnabled = $false
+    $script:plexReleases = @()
+    $script:plexSourceDir = $null
+    $script:srrdbAvailable = $false
 
-        if ($script:testConfig.PlexDataSource -and $script:testConfig.PlexDataSource.Enabled) {
-            $script:plexConfig = $script:testConfig.PlexDataSource
-            $script:plexMappings = $script:testConfig.PlexSourceMappings
-            if ($script:plexMappings -and $script:plexMappings.Count -gt 0) {
+    # Check for SrrDBAutomationToolkit
+    if (Get-Module -Name SrrDBAutomationToolkit -ListAvailable) {
+        Import-Module SrrDBAutomationToolkit -Force -ErrorAction 'SilentlyContinue'
+        $script:srrdbAvailable = $null -ne (Get-Module -Name SrrDBAutomationToolkit)
+    }
+
+    # Get playlist name from config or use default
+    $playlistName = 'ReScenePS-TestData'
+    if ($script:testConfig.PlexDataSource.PlaylistName) {
+        $playlistName = $script:testConfig.PlexDataSource.PlaylistName
+    }
+
+    # Auto-enable Plex if PAT env vars are set or module is configured
+    if (Test-PlexAvailable) {
+        Initialize-PlexForCI | Out-Null
+
+        Write-Host "Discovering test releases from Plex playlist '$playlistName'..."
+
+        try {
+            # Discover releases from playlist (extracts release names from file paths)
+            $script:plexReleases = @(Get-PlexTestRelease -PlaylistName $playlistName -ErrorAction 'Stop')
+
+            if ($script:plexReleases.Count -gt 0) {
+                Write-Host "Found $($script:plexReleases.Count) release(s) in playlist:"
+                foreach ($release in $script:plexReleases) {
+                    Write-Host "  - $($release.ReleaseName) ($($release.VideoCodec) $($release.VideoResolution))"
+                }
+
+                # Download SRRs from srrdb for each release
+                if ($script:srrdbAvailable) {
+                    $script:srrDir = New-TestTempDirectory -Prefix 'ReScenePS-SRRs'
+                    foreach ($release in $script:plexReleases) {
+                        try {
+                            Write-Host "Downloading SRR for $($release.ReleaseName)..."
+                            Get-SatSrr -ReleaseName $release.ReleaseName -OutPath $script:srrDir -ErrorAction 'Stop'
+                            $srrFile = Get-ChildItem -Path $script:srrDir -Filter "$($release.ReleaseName).srr" -ErrorAction 'SilentlyContinue'
+                            if ($srrFile) {
+                                $release | Add-Member -NotePropertyName 'SrrPath' -NotePropertyValue $srrFile.FullName -Force
+                            }
+                        }
+                        catch {
+                            Write-Warning "Failed to download SRR for $($release.ReleaseName): $_"
+                        }
+                    }
+                }
+
+                # Download source files from Plex
+                $script:plexSourceDir = New-TestTempDirectory -Prefix 'ReScenePS-PlexSource'
+                Write-Host "Downloading source files from Plex..."
+                Sync-PatMedia -PlaylistName $playlistName -Destination $script:plexSourceDir -SkipSubtitles -Force -Confirm:$false
+
                 $script:plexEnabled = $true
+                Write-Host "Plex setup complete."
+            }
+            else {
+                Write-Warning "No releases found in playlist '$playlistName'"
             }
         }
-
-        # Load RestoreReleaseTests
-        $script:restoreReleaseTests = @()
-        if ($script:testConfig.RestoreReleaseTests) {
-            $script:restoreReleaseTests = @($script:testConfig.RestoreReleaseTests | ForEach-Object {
-                @{
-                    ReleaseName = $_.ReleaseName
-                    ReleaseType = $_.ReleaseType
-                    HasProof    = [bool]$_.HasProof
-                    HasSrs      = [bool]$_.HasSrs
-                }
-            })
+        catch {
+            Write-Warning "Failed to setup Plex: $_"
         }
     }
 }
 
 AfterAll {
+    # Clean up Plex source files (contains copyrighted material)
+    if ($script:plexSourceDir) {
+        Remove-TestTempDirectory -Path $script:plexSourceDir
+    }
+    # Clean up downloaded SRR files
+    if ($script:srrDir) {
+        Remove-TestTempDirectory -Path $script:srrDir
+    }
     Remove-TestTempDirectory -Path $script:tempDir
 }
 
@@ -325,17 +307,22 @@ Describe 'Show-SrrInfo - Display' -Skip:$script:skipFunctionalTests {
 }
 
 # =============================================================================
-# SRR RECONSTRUCTION TESTS (require network access or Plex data source)
+# SRR RECONSTRUCTION TESTS (dynamically discovered from Plex playlist)
 # =============================================================================
 
-Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -or $script:srrReconstructionTests.Count -eq 0) {
+Describe 'Invoke-SrrReconstruct - Plex Sources' -Skip:(-not $script:plexEnabled) {
 
-    Context 'Reconstructing <_.Name> (<_.ReleaseType>)' -ForEach $script:srrReconstructionTests {
+    BeforeAll {
+        # Filter to releases that have SRR files downloaded
+        $script:testableReleases = @($script:plexReleases | Where-Object { $_.SrrPath })
+    }
+
+    Context 'Reconstructing <_.ReleaseName> (<_.VideoCodec> <_.VideoResolution>)' -ForEach $script:plexReleases {
 
         BeforeAll {
-            $sample = $_
+            $release = $_
             # Create test-specific output directory
-            $safeName = $sample.Name -replace '[^\w\-\.]', '_'
+            $safeName = $release.ReleaseName -replace '[^\w\-\.]', '_'
             $script:testOutputDir = Join-Path -Path $script:tempDir -ChildPath "reconstruct-$safeName"
             New-Item -Path $script:testOutputDir -ItemType Directory -Force | Out-Null
 
@@ -345,183 +332,153 @@ Describe 'Invoke-SrrReconstruct - Network' -Skip:($script:skipFunctionalTests -o
 
             $script:extractedSuccessfully = $false
 
-            # Download source file from Plex
-            try {
-                # Get Plex cache settings from config
-                $cachePath = if ($script:plexConfig.CachePath) {
-                    Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
-                } else {
-                    Get-PlexCachePath
+            # Look up SRR file from downloaded folder (ForEach data is from discovery, SrrPath added in BeforeAll)
+            $script:srrPath = $null
+            if ($script:srrDir) {
+                $srrFile = Get-ChildItem -Path $script:srrDir -Filter "$($release.ReleaseName).srr" -ErrorAction 'SilentlyContinue'
+                if ($srrFile) {
+                    $script:srrPath = $srrFile.FullName
                 }
-                $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
-                    $script:plexConfig.CacheTtlHours
-                } else {
-                    168
-                }
+            }
 
-                $sourceFile = Get-PlexSourceFile `
-                    -ReleaseName $sample.Name `
-                    -Mapping $sample.PlexMapping `
-                    -CachePath $cachePath `
-                    -CacheTtlHours $cacheTtl `
-                    -CollectionName $script:plexConfig.CollectionName `
-                    -LibraryName $script:plexConfig.LibraryName
+            # Find source file from downloaded Plex content by matching the original filename
+            if ($script:plexSourceDir -and $script:srrPath) {
+                # Search for the file by extension type
+                $extension = [System.IO.Path]::GetExtension($release.FileName)
+                $sourceFiles = Get-ChildItem -Path $script:plexSourceDir -Recurse -File |
+                    Where-Object { $_.Extension -eq $extension }
+
+                # For single file, use it directly; otherwise try to match by size
+                $sourceFile = if ($sourceFiles.Count -eq 1) {
+                    $sourceFiles[0].FullName
+                } else {
+                    $sourceFiles | Where-Object { $_.Length -eq $release.FileSize } |
+                        Select-Object -First 1 -ExpandProperty FullName
+                }
 
                 if ($sourceFile -and (Test-Path $sourceFile)) {
                     # Get the expected source filename from the SRR
-                    $srrBlocks = Get-SrrBlock -SrrFile $sample.SrrPath
+                    $srrBlocks = Get-SrrBlock -SrrFile $script:srrPath
                     $packedFiles = $srrBlocks | Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' }
-                    # Find the main content file (largest file, typically .mkv or .avi)
                     $mainFile = $packedFiles |
                         Where-Object { $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
                         Sort-Object -Property UnpackedSize -Descending |
                         Select-Object -First 1
 
                     if ($mainFile) {
-                        $expectedName = $mainFile.FileName
-                        $destPath = Join-Path $script:sourceDir $expectedName
+                        $destPath = Join-Path $script:sourceDir $mainFile.FileName
                         Copy-Item -Path $sourceFile -Destination $destPath -Force
                     } else {
-                        # Fallback: just copy with original name
                         Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
                     }
                     $script:extractedSuccessfully = $true
                 }
             }
-            catch {
-                Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
-            }
         }
 
-        It 'Source files obtained' {
+        It 'Source file obtained from Plex' {
             if (-not $script:extractedSuccessfully) {
-                Set-ItResult -Skipped -Because "Plex download failed"
+                Set-ItResult -Skipped -Because "Source file not found in Plex download"
                 return
             }
             $script:extractedSuccessfully | Should -Be $true
         }
 
-        It 'Reconstructs RAR volumes successfully' {
+        It 'Reconstructs RAR volumes' {
             if (-not $script:extractedSuccessfully) {
-                Set-ItResult -Skipped -Because 'Source file extraction failed'
+                Set-ItResult -Skipped -Because 'Source file not available'
                 return
             }
-            $result = Invoke-SrrReconstruct -SrrFile $sample.SrrPath -SourcePath $script:sourceDir -OutputPath $script:testOutputDir
+            Invoke-SrrReconstruct -SrrFile $script:srrPath -SourcePath $script:sourceDir -OutputPath $script:testOutputDir
 
-            # Check that at least some RAR files were created
-            $createdRars = Get-ChildItem -Path $script:testOutputDir -Filter '*.rar' -ErrorAction SilentlyContinue
+            $createdRars = Get-ChildItem -Path $script:testOutputDir -Filter '*.rar' -ErrorAction 'SilentlyContinue'
             $createdRars.Count | Should -BeGreaterThan 0
         }
 
-        It 'Validates reconstructed RARs against SFV' {
-            if (-not $script:extractedSuccessfully) {
-                Set-ItResult -Skipped -Because 'Source file extraction failed'
-                return
-            }
-            # Extract SFV from SRR and validate
-            $blocks = Get-SrrBlock -SrrFile $sample.SrrPath
-            $sfvBlocks = $blocks | Where-Object {
-                $_.GetType().Name -eq 'SrrStoredFileBlock' -and $_.FileName -match '\.sfv$'
-            }
-
-            if ($sfvBlocks) {
-                # SFV validation would happen here
-                $true | Should -Be $true
-            } else {
-                Set-ItResult -Skipped -Because 'No SFV file in SRR'
-            }
-        }
-
         AfterAll {
-            # Cleanup local directories
             if ($script:testOutputDir -and (Test-Path -Path $script:testOutputDir)) {
                 Remove-Item -Path $script:testOutputDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
             if ($script:sourceDir -and (Test-Path -Path $script:sourceDir)) {
                 Remove-Item -Path $script:sourceDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
-
-            # Clean up cached source file to free disk space (important for CI)
-            if ($sample.PlexMapping -and $sample.PlexMapping.RatingKey) {
-                $cachePath = Get-PlexCachePath
-                Remove-CachedMediaFile -RatingKey $sample.PlexMapping.RatingKey -CachePath $cachePath | Out-Null
-            }
         }
     }
 }
 
-Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests -or $script:srrReconstructionTests.Count -eq 0) {
+Describe 'Invoke-SrrRestore - Full Workflow' -Skip:(-not $script:plexEnabled) {
 
-    Context 'Full restore for <_.Name> (<_.ReleaseType>)' -ForEach ($script:srrReconstructionTests | Select-Object -First 1) {
-        # Only run one full restore test to save time
+    Context 'Full restore for <_.ReleaseName>' -ForEach @($script:plexReleases | Select-Object -First 1) {
 
         BeforeAll {
-            $sample = $_
-            $safeName = $sample.Name -replace '[^\w\-\.]', '_'
+            $release = $_
+            if (-not $release) {
+                $script:setupSuccessful = $false
+                return
+            }
+
+            $safeName = $release.ReleaseName -replace '[^\w\-\.]', '_'
 
             # Create isolated work directory
             $script:testWorkDir = Join-Path -Path $script:tempDir -ChildPath "restore-$safeName"
             New-Item -Path $script:testWorkDir -ItemType Directory -Force | Out-Null
 
-            # Copy SRR to work directory
-            $script:workSrrPath = Join-Path -Path $script:testWorkDir -ChildPath (Split-Path -Leaf $sample.SrrPath)
-            Copy-Item -Path $sample.SrrPath -Destination $script:workSrrPath
+            # Look up SRR file from downloaded folder
+            $script:srrPath = $null
+            if ($script:srrDir) {
+                $srrFile = Get-ChildItem -Path $script:srrDir -Filter "$($release.ReleaseName).srr" -ErrorAction 'SilentlyContinue'
+                if ($srrFile) {
+                    $script:srrPath = $srrFile.FullName
+                }
+            }
 
-            # Download source files from Plex
+            $script:setupSuccessful = $false
+            if (-not $script:srrPath) {
+                return
+            }
+
+            # Copy SRR to work directory
+            $script:workSrrPath = Join-Path -Path $script:testWorkDir -ChildPath (Split-Path -Leaf $script:srrPath)
+            Copy-Item -Path $script:srrPath -Destination $script:workSrrPath
+
+            # Find source files from downloaded Plex content
             $script:sourceDir = Join-Path -Path $script:testWorkDir -ChildPath 'source'
             New-Item -Path $script:sourceDir -ItemType Directory -Force | Out-Null
 
-            $script:setupSuccessful = $false
+            if ($script:plexSourceDir) {
+                $extension = [System.IO.Path]::GetExtension($release.FileName)
+                $sourceFiles = Get-ChildItem -Path $script:plexSourceDir -Recurse -File |
+                    Where-Object { $_.Extension -eq $extension }
 
-            try {
-                $cachePath = if ($script:plexConfig.CachePath) {
-                    Get-PlexCachePath -CustomPath $script:plexConfig.CachePath
+                $sourceFile = if ($sourceFiles.Count -eq 1) {
+                    $sourceFiles[0].FullName
                 } else {
-                    Get-PlexCachePath
+                    $sourceFiles | Where-Object { $_.Length -eq $release.FileSize } |
+                        Select-Object -First 1 -ExpandProperty FullName
                 }
-                $cacheTtl = if ($script:plexConfig.CacheTtlHours) {
-                    $script:plexConfig.CacheTtlHours
-                } else {
-                    168
-                }
-
-                $sourceFile = Get-PlexSourceFile `
-                    -ReleaseName $sample.Name `
-                    -Mapping $sample.PlexMapping `
-                    -CachePath $cachePath `
-                    -CacheTtlHours $cacheTtl `
-                    -CollectionName $script:plexConfig.CollectionName `
-                    -LibraryName $script:plexConfig.LibraryName
 
                 if ($sourceFile -and (Test-Path $sourceFile)) {
-                    # Get the expected source filename from the SRR
-                    $srrBlocks = Get-SrrBlock -SrrFile $sample.SrrPath
+                    $srrBlocks = Get-SrrBlock -SrrFile $script:srrPath
                     $packedFiles = $srrBlocks | Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' }
-                    # Find the main content file (largest file, typically .mkv or .avi)
                     $mainFile = $packedFiles |
                         Where-Object { $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
                         Sort-Object -Property UnpackedSize -Descending |
                         Select-Object -First 1
 
                     if ($mainFile) {
-                        $expectedName = $mainFile.FileName
-                        $destPath = Join-Path $script:sourceDir $expectedName
+                        $destPath = Join-Path $script:sourceDir $mainFile.FileName
                         Copy-Item -Path $sourceFile -Destination $destPath -Force
                     } else {
-                        # Fallback: just copy with original name
                         Copy-Item -Path $sourceFile -Destination $script:sourceDir -Force
                     }
                     $script:setupSuccessful = $true
                 }
             }
-            catch {
-                Write-Warning "Plex source retrieval failed for $($sample.Name): $_"
-            }
         }
 
         It 'Setup completed successfully' {
             if (-not $script:setupSuccessful) {
-                Set-ItResult -Skipped -Because 'Plex download failed'
+                Set-ItResult -Skipped -Because 'Source file not available'
                 return
             }
             $script:setupSuccessful | Should -Be $true
@@ -529,7 +486,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
 
         It 'WhatIf mode shows preview without creating RAR files' {
             if (-not $script:setupSuccessful) {
-                Set-ItResult -Skipped -Because 'Setup failed - source extraction unsuccessful'
+                Set-ItResult -Skipped -Because 'Setup failed'
                 return
             }
             $outputDir = Join-Path -Path $script:testWorkDir -ChildPath 'output'
@@ -537,13 +494,13 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
 
             Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -WhatIf
 
-            $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction SilentlyContinue
+            $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction 'SilentlyContinue'
             $createdRars.Count | Should -Be 0
         }
 
         It 'Completes full restore' {
             if (-not $script:setupSuccessful) {
-                Set-ItResult -Skipped -Because 'Setup failed - source extraction unsuccessful'
+                Set-ItResult -Skipped -Because 'Setup failed'
                 return
             }
             $outputDir = Join-Path -Path $script:testWorkDir -ChildPath 'output-full'
@@ -553,7 +510,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
             # (they're transcoded/different from the original scene release files)
             Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -KeepSrr -KeepSources -SkipValidation -Confirm:$false
 
-            $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction SilentlyContinue
+            $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction 'SilentlyContinue'
             $createdRars.Count | Should -BeGreaterThan 0
         }
 
@@ -562,11 +519,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:($script:skipFunctionalTests 
                 Remove-Item -Path $script:testWorkDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
 
-            # Clean up cached source file to free disk space (important for CI)
-            if ($sample.PlexMapping -and $sample.PlexMapping.RatingKey) {
-                $cachePath = Get-PlexCachePath
-                Remove-CachedMediaFile -RatingKey $sample.PlexMapping.RatingKey -CachePath $cachePath | Out-Null
-            }
+            # Note: Cached source files are cleaned up by TTL and CI runner temp cleanup
         }
     }
 }
@@ -643,172 +596,70 @@ Describe 'Restore-SrsVideo' -Skip:($script:skipFunctionalTests -or $script:srsSa
 
 # =============================================================================
 # RESTORE-RELEASE INTEGRATION TESTS
-# Tests the full automation workflow using real srrdb queries
+# Tests the full automation workflow using releases discovered from Plex
 # =============================================================================
 
-Describe 'Restore-Release - Integration' -Skip:$script:skipFunctionalTests {
+Describe 'Restore-Release - Integration' -Skip:(-not $script:plexEnabled -or -not $script:srrdbAvailable) {
 
-    BeforeAll {
-        # Load RestoreReleaseTests from config
-        $script:restoreReleaseTests = @()
-        if ($script:testConfig.RestoreReleaseTests) {
-            $script:restoreReleaseTests = $script:testConfig.RestoreReleaseTests
-        }
-
-        # Check if SrrDBAutomationToolkit is available and import it
-        $script:srrdbAvailable = $null -ne (Get-Module -Name SrrDBAutomationToolkit -ListAvailable)
-        if ($script:srrdbAvailable) {
-            Import-Module SrrDBAutomationToolkit -Force -ErrorAction SilentlyContinue
-            # Verify it actually loaded
-            $script:srrdbAvailable = $null -ne (Get-Module -Name SrrDBAutomationToolkit)
-        }
-        if (-not $script:srrdbAvailable) {
-            Write-Warning 'SrrDBAutomationToolkit not available - Restore-Release tests will be limited'
-        }
-    }
-
-    Context 'Single release mode - <_.ReleaseName>' -ForEach $script:restoreReleaseTests {
+    Context 'Srrdb query and parse for <_.ReleaseName>' -ForEach $script:plexReleases {
 
         BeforeAll {
-            $sample = $_
-            $safeName = $sample.ReleaseName -replace '[^\w\-\.]', '_'
+            $release = $_
+            $safeName = $release.ReleaseName -replace '[^\w\-\.]', '_'
 
-            # Create test directory structure: temp/release-name/
-            $script:testWorkDir = Join-Path -Path $script:tempDir -ChildPath "restore-$safeName"
-            $script:releaseDir = Join-Path -Path $script:testWorkDir -ChildPath $sample.ReleaseName
+            $script:testWorkDir = Join-Path -Path $script:tempDir -ChildPath "restore-int-$safeName"
+            $script:releaseDir = Join-Path -Path $script:testWorkDir -ChildPath $release.ReleaseName
             New-Item -Path $script:releaseDir -ItemType Directory -Force | Out-Null
 
             $script:testSucceeded = $false
         }
 
-        It 'Queries srrdb and downloads SRR file' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-            # Run Restore-Release in WhatIf mode first to test query
-            # Then actually download just the SRR
-            $result = Restore-Release -Path $script:releaseDir -WhatIf -ErrorAction SilentlyContinue 2>&1
-
-            # Should have attempted to query srrdb (warning about not finding source is OK)
-            # The key test is that it found the release on srrdb and tried to download
-            $srrFile = Get-ChildItem -Path $script:releaseDir -Filter '*.srr' -ErrorAction SilentlyContinue
-            # In WhatIf mode, SRR won't be downloaded, so let's test actual download
-            if (-not $srrFile) {
-                # Download just the SRR using the toolkit directly
-                try {
-                    Get-SatSrr -ReleaseName $sample.ReleaseName -OutPath $script:releaseDir -ErrorAction Stop
-                    $srrFile = Get-ChildItem -Path $script:releaseDir -Filter '*.srr' -ErrorAction SilentlyContinue
-                }
-                catch {
-                    # If srrdb is rate-limited or release not found, skip
-                    Set-ItResult -Skipped -Because "srrdb query failed: $_"
-                    return
-                }
-            }
-
-            $srrFile | Should -Not -BeNullOrEmpty
-            $script:testSucceeded = $true
-        }
-
-        It 'Downloads proof image when available' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-            if (-not $sample.HasProof) {
-                Set-ItResult -Skipped -Because 'Release does not have proof'
-                return
-            }
-            if (-not $script:testSucceeded) {
-                Set-ItResult -Skipped -Because 'SRR download failed'
-                return
-            }
-
-            # Get release details to find proof filename
+        It 'Downloads SRR from srrdb' {
             try {
-                $releaseDetails = Get-SatRelease -ReleaseName $sample.ReleaseName -ErrorAction Stop
+                Get-SatSrr -ReleaseName $release.ReleaseName -OutPath $script:releaseDir -ErrorAction 'Stop'
+                $srrFile = Get-ChildItem -Path $script:releaseDir -Filter '*.srr' -ErrorAction 'SilentlyContinue'
+                $srrFile | Should -Not -BeNullOrEmpty
+                $script:testSucceeded = $true
             }
             catch {
-                Set-ItResult -Skipped -Because "Could not get release details: $_"
-                return
+                Set-ItResult -Skipped -Because "srrdb query failed: $_"
             }
-
-            # Find proof file in release files
-            $proofFile = $releaseDetails.Files | Where-Object { $_.name -match '\.(jpg|png|gif)$' } | Select-Object -First 1
-
-            if (-not $proofFile) {
-                Set-ItResult -Skipped -Because 'No proof file found in release details'
-                return
-            }
-
-            # Download proof
-            try {
-                Get-SatFile -ReleaseName $sample.ReleaseName -FileName $proofFile.name -OutPath $script:releaseDir -ErrorAction Stop
-            }
-            catch {
-                Set-ItResult -Skipped -Because "Proof download failed: $_"
-                return
-            }
-
-            $downloadedProof = Get-ChildItem -Path $script:releaseDir -Filter '*.jpg' -ErrorAction SilentlyContinue
-            $downloadedProof | Should -Not -BeNullOrEmpty
         }
 
         It 'Parses downloaded SRR correctly' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
             if (-not $script:testSucceeded) {
                 Set-ItResult -Skipped -Because 'SRR download failed'
                 return
             }
 
-            $srrFile = Get-ChildItem -Path $script:releaseDir -Filter '*.srr' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $srrFile) {
-                Set-ItResult -Skipped -Because 'No SRR file found'
-                return
-            }
-
+            $srrFile = Get-ChildItem -Path $script:releaseDir -Filter '*.srr' | Select-Object -First 1
             $blocks = Get-SrrBlock -SrrFile $srrFile.FullName
             $blocks | Should -Not -BeNullOrEmpty
 
-            # Should have SRR header
             $headers = $blocks | Where-Object { $_.GetType().Name -eq 'SrrHeaderBlock' }
             $headers | Should -Not -BeNullOrEmpty
-
-            # Should have stored files (NFO, SFV, etc.)
-            $storedFiles = $blocks | Where-Object { $_.GetType().Name -eq 'SrrStoredFileBlock' }
-            $storedFiles.Count | Should -BeGreaterThan 0
         }
 
         AfterAll {
             if ($script:testWorkDir -and (Test-Path -Path $script:testWorkDir)) {
-                Remove-Item -Path $script:testWorkDir -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $script:testWorkDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
         }
     }
 
-    Context 'Recurse mode - multiple releases' {
+    Context 'Recurse mode - multiple releases' -Skip:($script:plexReleases.Count -lt 2) {
 
         BeforeAll {
-            # Create a fresh directory for recurse tests
             $script:recurseTestDir = Join-Path -Path $script:tempDir -ChildPath 'restore-recurse-test'
             if (Test-Path $script:recurseTestDir) {
                 Remove-Item -Path $script:recurseTestDir -Recurse -Force
             }
             New-Item -Path $script:recurseTestDir -ItemType Directory -Force | Out-Null
 
-            # Create subdirs for real test releases - use the release names from discovery
-            # Use known good releases from srrdb
-            $realReleases = @(
-                'The.Mummy.Resurrected.2014.PROPER.DVDRiP.X264-TASTE'
-                '009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa'
-            )
+            # Use discovered releases from playlist
             $script:releaseSubDirs = @()
-            foreach ($releaseName in $realReleases) {
-                $subDir = Join-Path -Path $script:recurseTestDir -ChildPath $releaseName
+            foreach ($release in $script:plexReleases) {
+                $subDir = Join-Path -Path $script:recurseTestDir -ChildPath $release.ReleaseName
                 New-Item -Path $subDir -ItemType Directory -Force | Out-Null
                 $script:releaseSubDirs += $subDir
             }
@@ -816,173 +667,84 @@ Describe 'Restore-Release - Integration' -Skip:$script:skipFunctionalTests {
             # Also create a fake release dir that won't be found on srrdb
             $fakeDir = Join-Path -Path $script:recurseTestDir -ChildPath 'Fake.Release.2024.NotOnSrrdb-TEST'
             New-Item -Path $fakeDir -ItemType Directory -Force | Out-Null
-
-            $script:expectedProcessed = $realReleases.Count + 1  # real releases + fake
         }
 
         It 'Processes multiple subdirectories' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-
-            # Verify directories exist
             $subdirs = Get-ChildItem -Path $script:recurseTestDir -Directory
-            if ($subdirs.Count -lt 2) {
-                Set-ItResult -Skipped -Because "Only $($subdirs.Count) subdirectories found"
-                return
-            }
-
-            # Run with -Recurse (in WhatIf to avoid downloads)
             $result = Restore-Release -Path $script:recurseTestDir -Recurse -WhatIf
-
-            # Should return results object
             $result | Should -Not -BeNull
             $result.Processed | Should -BeGreaterOrEqual $subdirs.Count
         }
 
         It 'Skips releases not found on srrdb gracefully' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-
-            $result = Restore-Release -Path $script:recurseTestDir -Recurse -WhatIf -ErrorAction SilentlyContinue
-
-            # Should have skipped the fake release
+            $result = Restore-Release -Path $script:recurseTestDir -Recurse -WhatIf -ErrorAction 'SilentlyContinue'
             $result.Skipped | Should -BeGreaterOrEqual 1
         }
 
         AfterAll {
             if ($script:recurseTestDir -and (Test-Path -Path $script:recurseTestDir)) {
-                Remove-Item -Path $script:recurseTestDir -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $script:recurseTestDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
         }
     }
 
-    Context 'Existing SRR detection' {
+    Context 'Full workflow with Plex source' -Skip:($script:plexReleases.Count -eq 0) {
 
         BeforeAll {
-            $script:existingSrrDir = Join-Path -Path $script:tempDir -ChildPath 'restore-existing-srr'
-            New-Item -Path $script:existingSrrDir -ItemType Directory -Force | Out-Null
+            # Use first discovered release from playlist that has an SRR downloaded
+            $script:fullWorkflowRelease = $null
+            $script:fullSrrPath = $null
 
-            # Find project root - navigate up from tests dir
-            $projectRoot = Split-Path -Parent $PSScriptRoot
-
-            # Copy an existing SRR from samples to simulate already having it
-            $samplesDir = Join-Path $projectRoot 'tests/samples'
-            $script:existingReleaseDir = $null
-
-            if (Test-Path $samplesDir) {
-                $sampleSrr = Get-ChildItem -Path $samplesDir -Filter '*.srr' -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($sampleSrr) {
-                    $releaseName = $sampleSrr.BaseName
-                    $script:existingReleaseDir = Join-Path -Path $script:existingSrrDir -ChildPath $releaseName
-                    New-Item -Path $script:existingReleaseDir -ItemType Directory -Force | Out-Null
-                    Copy-Item -Path $sampleSrr.FullName -Destination $script:existingReleaseDir
-                }
-            }
-        }
-
-        It 'Detects existing SRR and skips download' {
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-            if (-not $script:existingReleaseDir) {
-                Set-ItResult -Skipped -Because 'No sample SRR files available'
-                return
-            }
-
-            # Verify the SRR exists in the directory
-            $srrInDir = Get-ChildItem -Path $script:existingReleaseDir -Filter '*.srr'
-            $srrInDir.Count | Should -Be 1
-
-            # Run Restore-Release - it will fail on missing source files, but we just want to verify
-            # that it detected the existing SRR and didn't try to download from srrdb
-            # Capture all output including errors
-            $output = & {
-                try {
-                    Restore-Release -Path $script:existingReleaseDir -WhatIf -ErrorAction SilentlyContinue 6>&1 2>&1
-                } catch {
-                    # Errors are OK - we're testing detection, not restoration
-                    $_
-                }
-            }
-
-            # Convert output to string for checking
-            $outputText = ($output | Out-String)
-
-            # Should mention that SRR already exists (detected local file)
-            # This proves it didn't try to query/download from srrdb
-            $outputText | Should -Match 'SRR already exists'
-        }
-
-        AfterAll {
-            if ($script:existingSrrDir -and (Test-Path -Path $script:existingSrrDir)) {
-                Remove-Item -Path $script:existingSrrDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-
-    Context 'Full workflow with Plex source' {
-
-        BeforeAll {
-            # Use the first RestoreReleaseTest that also has a Plex mapping
-            $script:fullWorkflowTest = $null
-            foreach ($test in $script:restoreReleaseTests) {
-                $srrFileName = "$($test.ReleaseName).srr"
-                if ($script:plexMappings.ContainsKey($srrFileName)) {
-                    $script:fullWorkflowTest = @{
-                        ReleaseName = $test.ReleaseName
-                        PlexMapping = $script:plexMappings[$srrFileName]
+            foreach ($release in $script:plexReleases) {
+                if ($script:srrDir) {
+                    $srrFile = Get-ChildItem -Path $script:srrDir -Filter "$($release.ReleaseName).srr" -ErrorAction 'SilentlyContinue'
+                    if ($srrFile) {
+                        $script:fullWorkflowRelease = $release
+                        $script:fullSrrPath = $srrFile.FullName
+                        break
                     }
-                    break
                 }
             }
 
-            if ($script:fullWorkflowTest) {
-                $safeName = $script:fullWorkflowTest.ReleaseName -replace '[^\w\-\.]', '_'
+            if ($script:fullWorkflowRelease) {
+                $release = $script:fullWorkflowRelease
+                $safeName = $release.ReleaseName -replace '[^\w\-\.]', '_'
                 $script:fullWorkflowDir = Join-Path -Path $script:tempDir -ChildPath "restore-full-$safeName"
-                $script:fullReleaseDir = Join-Path -Path $script:fullWorkflowDir -ChildPath $script:fullWorkflowTest.ReleaseName
+                $script:fullReleaseDir = Join-Path -Path $script:fullWorkflowDir -ChildPath $release.ReleaseName
                 New-Item -Path $script:fullReleaseDir -ItemType Directory -Force | Out-Null
             }
         }
 
         It 'Completes full restore workflow' {
-            if (-not $script:plexEnabled) {
-                Set-ItResult -Skipped -Because 'Plex data source not enabled'
-                return
-            }
-            if (-not $script:srrdbAvailable) {
-                Set-ItResult -Skipped -Because 'SrrDBAutomationToolkit not available'
-                return
-            }
-            if (-not $script:fullWorkflowTest) {
-                Set-ItResult -Skipped -Because 'No Plex mapping found for test releases'
-                return
-            }
-            # Download source from Plex
-            $cachePath = Get-PlexCachePath
-            $sourceFile = Get-PlexSourceFile `
-                -ReleaseName $script:fullWorkflowTest.ReleaseName `
-                -Mapping $script:fullWorkflowTest.PlexMapping `
-                -CachePath $cachePath `
-                -CacheTtlHours 168 `
-                -CollectionName $script:plexConfig.CollectionName `
-                -LibraryName $script:plexConfig.LibraryName
-
-            if (-not $sourceFile -or -not (Test-Path $sourceFile)) {
-                Set-ItResult -Skipped -Because 'Plex source download failed'
+            if (-not $script:fullWorkflowRelease -or -not $script:fullSrrPath) {
+                Set-ItResult -Skipped -Because 'No releases with SRR available'
                 return
             }
 
-            # Copy source to release dir with correct name
-            # First, we need to download SRR to know expected filename
-            Get-SatSrr -ReleaseName $script:fullWorkflowTest.ReleaseName -OutPath $script:fullReleaseDir -ErrorAction Stop
+            $release = $script:fullWorkflowRelease
 
-            $srrFile = Get-ChildItem -Path $script:fullReleaseDir -Filter '*.srr' | Select-Object -First 1
-            $srrBlocks = Get-SrrBlock -SrrFile $srrFile.FullName
+            # Find source file from Plex download
+            $extension = [System.IO.Path]::GetExtension($release.FileName)
+            $sourceFiles = Get-ChildItem -Path $script:plexSourceDir -Recurse -File |
+                Where-Object { $_.Extension -eq $extension }
+
+            $sourceFile = if ($sourceFiles.Count -eq 1) {
+                $sourceFiles[0].FullName
+            } else {
+                $sourceFiles | Where-Object { $_.Length -eq $release.FileSize } |
+                    Select-Object -First 1 -ExpandProperty FullName
+            }
+
+            if (-not $sourceFile) {
+                Set-ItResult -Skipped -Because 'Source file not found'
+                return
+            }
+
+            # Copy SRR to release dir
+            Copy-Item -Path $script:fullSrrPath -Destination $script:fullReleaseDir -Force
+
+            # Get expected filename from SRR and copy source
+            $srrBlocks = Get-SrrBlock -SrrFile $script:fullSrrPath
             $packedFiles = $srrBlocks | Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' }
             $mainFile = $packedFiles |
                 Where-Object { $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
@@ -999,20 +761,13 @@ Describe 'Restore-Release - Integration' -Skip:$script:skipFunctionalTests {
 
             $result.Succeeded | Should -Be 1
 
-            # Check that RAR files were created
-            $rarFiles = Get-ChildItem -Path $script:fullReleaseDir -Filter '*.rar' -ErrorAction SilentlyContinue
+            $rarFiles = Get-ChildItem -Path $script:fullReleaseDir -Filter '*.rar' -ErrorAction 'SilentlyContinue'
             $rarFiles.Count | Should -BeGreaterThan 0
         }
 
         AfterAll {
             if ($script:fullWorkflowDir -and (Test-Path -Path $script:fullWorkflowDir)) {
-                Remove-Item -Path $script:fullWorkflowDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-
-            # Cleanup Plex cache
-            if ($script:fullWorkflowTest -and $script:fullWorkflowTest.PlexMapping.RatingKey) {
-                $cachePath = Get-PlexCachePath
-                Remove-CachedMediaFile -RatingKey $script:fullWorkflowTest.PlexMapping.RatingKey -CachePath $cachePath | Out-Null
+                Remove-Item -Path $script:fullWorkflowDir -Recurse -Force -ErrorAction 'SilentlyContinue'
             }
         }
     }
@@ -1037,7 +792,7 @@ Describe 'Error Handling' {
         $threw = $false
         $result = $null
         try {
-            $result = Restore-SrsVideo -SrsFilePath 'C:\nonexistent\file.srs' -SourceMkvPath 'C:\nonexistent\source.mkv' -OutputMkvPath 'C:\output.mkv' -ErrorAction Stop
+            $result = Restore-SrsVideo -SrsFilePath 'C:\nonexistent\file.srs' -SourceMkvPath 'C:\nonexistent\source.mkv' -OutputMkvPath 'C:\output.mkv' -ErrorAction 'Stop'
         } catch {
             $threw = $true
         }

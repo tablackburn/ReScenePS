@@ -195,8 +195,8 @@ Reconstruction tests can obtain source files from a Plex server instead of local
 **Setup:**
 1. Install PlexAutomationToolkit: `Install-Module PlexAutomationToolkit`
 2. Connect to Plex: `Connect-PatAccount` and `Add-PatServer -ServerName 'MyPlex' -Default`
-3. Run `.\tests\Initialize-PlexTestCollection.ps1` to create a collection with test releases
-4. Copy generated `PlexSourceMappings` to `TestConfig.psd1`
+3. Create a playlist named `ReScenePS-TestData` and add test media to it
+4. Ensure media files are stored in paths containing the release name (e.g., `.../24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE/...`)
 5. Set `PlexDataSource.Enabled = $true` in `TestConfig.psd1`
 
 **For CI/CD:**
@@ -205,10 +205,10 @@ Set environment variables instead of stored config:
 - `PAT_TOKEN` - Plex authentication token
 
 **Test Behavior:**
-- Tests try network paths first (existing behavior)
-- If network unavailable, tests fall back to Plex download
+- Tests search the playlist for items matching release names by file path
 - Downloaded files are cached locally (default: 1 week TTL)
-- Tests skip gracefully if neither source is available
+- Tests skip gracefully if source is not available
+- Playlists are user-specific and not visible to other Plex users (privacy-friendly)
 
 ### Public Domain Test Releases
 
@@ -225,9 +225,9 @@ For copyright-free testing, the following public domain films have scene release
 **To use public domain releases:**
 1. Download SRR files from `https://www.srrdb.com/browse/<release-name>`
 2. Place SRR files in `tests/samples/`
-3. Add the films to your Plex library (any edition)
-4. Configure `PlexSourceMappings` in `TestConfig.psd1` with your Plex ratingKeys
-5. Run tests - they'll use Plex as the source for these public domain films
+3. Add the films to your Plex library (stored in paths containing the release name)
+4. Add them to the `ReScenePS-TestData` playlist
+5. Run tests - they'll auto-discover and use Plex as the source
 
 ## Binary File Formats
 

@@ -77,7 +77,7 @@ function Get-UnrarPath {
     }
 
     # Check PATH
-    $pathUnrar = Get-Command 'unrar' -ErrorAction SilentlyContinue
+    $pathUnrar = Get-Command 'unrar' -ErrorAction 'SilentlyContinue'
     if ($pathUnrar) {
         return $pathUnrar.Source
     }
@@ -198,7 +198,7 @@ function Remove-TestTempDirectory {
     )
 
     if ($Path -and (Test-Path -Path $Path)) {
-        Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $Path -Recurse -Force -ErrorAction 'SilentlyContinue'
     }
 }
 
@@ -206,650 +206,203 @@ function Remove-TestTempDirectory {
 
 #region Plex Data Source
 
-function Test-PlexModuleAvailable {
+function Test-PlexAvailable {
     <#
     .SYNOPSIS
-    Checks if PlexAutomationToolkit module is available.
-
-    .OUTPUTS
-    [bool] True if the module is available
-    #>
-    [CmdletBinding()]
-    param()
-
-    $null -ne (Get-Module -Name PlexAutomationToolkit -ListAvailable)
-}
-
-function Get-PlexConnectionInfo {
-    <#
-    .SYNOPSIS
-    Gets Plex connection information from environment variables or stored config.
+    Checks if PlexAutomationToolkit is available and configured.
 
     .DESCRIPTION
-    Checks for Plex credentials in the following order:
-    1. Environment variables (PAT_SERVER_URI, PAT_TOKEN) - for CI/CD
-    2. PlexAutomationToolkit stored config - for developer machines
-
-    Requires PlexAutomationToolkit module to be installed for stored config.
+    Returns true if:
+    - PlexAutomationToolkit module is installed, AND
+    - Either PAT_SERVER_URI/PAT_TOKEN env vars are set (CI), OR
+    - A default server is configured (developer machine)
 
     .OUTPUTS
-    [hashtable] Contains ServerUri, Token, and Source, or $null if not available
+    [bool] True if Plex is available for use
     #>
     [CmdletBinding()]
     param()
 
-    # Try environment variables first (CI/CD scenario)
+    # Check if module is available
+    if (-not (Get-Module -Name PlexAutomationToolkit -ListAvailable)) {
+        return $false
+    }
+
+    # Check for CI environment variables
     if ($env:PAT_SERVER_URI -and $env:PAT_TOKEN) {
-        # Still need the module for API calls
-        if (-not (Test-PlexModuleAvailable)) {
-            Write-Verbose "PAT_SERVER_URI and PAT_TOKEN set but PlexAutomationToolkit not installed"
-            return $null
-        }
-
-        # Ensure PAT configuration directory exists (required for CI runners)
-        # PAT uses $env:OneDrive -> $env:USERPROFILE/Documents -> $env:LOCALAPPDATA
-        # On Linux/macOS, these may not exist - set them to valid temp locations
-        $tempBase = [System.IO.Path]::GetTempPath()
-        if (-not $env:USERPROFILE) {
-            $env:USERPROFILE = $tempBase
-        }
-        if (-not $env:LOCALAPPDATA) {
-            $env:LOCALAPPDATA = Join-Path $tempBase 'LocalAppData'
-        }
-        # Pre-create PAT config directories in all fallback locations
-        $patConfigDirs = @(
-            (Join-Path $env:USERPROFILE 'Documents\PlexAutomationToolkit'),
-            (Join-Path $env:LOCALAPPDATA 'PlexAutomationToolkit')
-        )
-        foreach ($dir in $patConfigDirs) {
-            if (-not (Test-Path $dir)) {
-                New-Item -Path $dir -ItemType Directory -Force | Out-Null
-            }
-        }
-
-        # Force reimport to pick up new environment variables
-        Remove-Module PlexAutomationToolkit -ErrorAction SilentlyContinue
-        Import-Module PlexAutomationToolkit -ErrorAction SilentlyContinue -Force
-
-        # Configure PlexAutomationToolkit with env var credentials
-        # On fresh CI runners, storage may not be initialized, so wrap in try-catch
-        try {
-            $existingServer = Get-PatStoredServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
-            if (-not $existingServer -or $existingServer.uri -ne $env:PAT_SERVER_URI) {
-                Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
-            } else {
-                Set-PatDefaultServer -Name 'CI-Plex' -ErrorAction SilentlyContinue
-            }
-        }
-        catch {
-            # Storage not initialized - just add the server directly
-            Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
-        }
-
-        return @{
-            ServerUri = $env:PAT_SERVER_URI
-            Token     = $env:PAT_TOKEN
-            Source    = 'Environment'
-        }
+        return $true
     }
 
-    # Try PlexAutomationToolkit stored config (developer scenario)
-    if (-not (Test-PlexModuleAvailable)) {
-        Write-Verbose "PlexAutomationToolkit module not installed"
-        return $null
-    }
-
+    # Check for stored config
     try {
-        Import-Module PlexAutomationToolkit -ErrorAction Stop
-        $server = Get-PatStoredServer -Default -ErrorAction Stop
-        if ($server) {
-            return @{
-                ServerUri = $server.uri
-                Token     = $server.token
-                Source    = 'StoredConfig'
-            }
-        }
+        Import-Module PlexAutomationToolkit -ErrorAction 'Stop'
+        $server = Get-PatStoredServer -Default -ErrorAction 'SilentlyContinue'
+        return $null -ne $server
     }
     catch {
-        Write-Verbose "Could not load PlexAutomationToolkit config: $_"
+        return $false
     }
-
-    return $null
 }
 
-function Test-PlexConnectionAvailable {
+function Initialize-PlexForCI {
     <#
     .SYNOPSIS
-    Quick check if Plex connection is available.
+    Configures PlexAutomationToolkit for CI environments using environment variables.
+
+    .DESCRIPTION
+    Sets up PAT with credentials from PAT_SERVER_URI and PAT_TOKEN environment variables.
+    Creates necessary config directories and registers the server.
+    No-op if env vars are not set or if already configured.
 
     .OUTPUTS
-    [bool] True if Plex connection info is available
+    [bool] True if Plex was configured successfully
     #>
     [CmdletBinding()]
     param()
 
-    $info = Get-PlexConnectionInfo
-    return $null -ne $info
-}
-
-function Get-PlexCachePath {
-    <#
-    .SYNOPSIS
-    Returns the cache directory path for Plex-sourced test files.
-
-    .PARAMETER CustomPath
-    Optional custom cache path. If not specified, uses default temp location.
-
-    .OUTPUTS
-    [string] Path to the cache directory
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$CustomPath
-    )
-
-    if ($CustomPath) {
-        $cachePath = $CustomPath
-    }
-    elseif ($env:RUNNER_TEMP) {
-        # GitHub Actions: use runner temp for consistent caching
-        $cachePath = Join-Path $env:RUNNER_TEMP 'ReScenePS-PlexCache'
-    }
-    else {
-        $cachePath = Join-Path ([System.IO.Path]::GetTempPath()) 'ReScenePS-PlexCache'
-    }
-
-    if (-not (Test-Path $cachePath)) {
-        New-Item -Path $cachePath -ItemType Directory -Force | Out-Null
-    }
-
-    return $cachePath
-}
-
-function Get-CachedMediaFile {
-    <#
-    .SYNOPSIS
-    Checks if a media file exists in the cache and is still fresh.
-
-    .PARAMETER RatingKey
-    The Plex rating key for the media item.
-
-    .PARAMETER CachePath
-    Path to the cache directory.
-
-    .PARAMETER CacheTtlHours
-    Cache time-to-live in hours. Use -1 for never expire.
-
-    .OUTPUTS
-    [string] Path to cached file if valid, or $null
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [int]$RatingKey,
-
-        [Parameter(Mandatory)]
-        [string]$CachePath,
-
-        [int]$CacheTtlHours = 168
-    )
-
-    $metadataPath = Join-Path $CachePath 'metadata.json'
-    if (-not (Test-Path $metadataPath)) {
-        return $null
-    }
-
-    try {
-        $metadata = Get-Content $metadataPath -Raw | ConvertFrom-Json
-        $cacheKey = "rk_$RatingKey"
-
-        if ($metadata.items.PSObject.Properties.Name -contains $cacheKey) {
-            $entry = $metadata.items.$cacheKey
-
-            if (Test-Path $entry.LocalPath) {
-                # Check TTL
-                if ($CacheTtlHours -lt 0) {
-                    # Never expire
-                    return $entry.LocalPath
-                }
-
-                $cachedTime = [datetime]::Parse($entry.CachedAt)
-                $age = (Get-Date) - $cachedTime
-
-                if ($age.TotalHours -lt $CacheTtlHours) {
-                    return $entry.LocalPath
-                }
-            }
-        }
-    }
-    catch {
-        Write-Verbose "Error reading cache metadata: $_"
-    }
-
-    return $null
-}
-
-function Remove-CachedMediaFile {
-    <#
-    .SYNOPSIS
-    Removes a specific cached media file by RatingKey.
-
-    .DESCRIPTION
-    Surgically removes a single cached file and updates metadata.
-    Useful for freeing disk space in CI environments after processing.
-    Returns silently if the cache entry doesn't exist (already cleaned up).
-
-    .PARAMETER RatingKey
-    The Plex rating key for the media item to remove.
-
-    .PARAMETER CachePath
-    Path to the cache directory.
-
-    .OUTPUTS
-    [bool] True if file was removed, false if not found or already cleaned
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [int]$RatingKey,
-
-        [Parameter(Mandatory)]
-        [string]$CachePath
-    )
-
-    $metadataPath = Join-Path $CachePath 'metadata.json'
-    if (-not (Test-Path $metadataPath)) {
-        # No metadata file means nothing to clean up
+    # Only needed for CI with env vars
+    if (-not $env:PAT_SERVER_URI -or -not $env:PAT_TOKEN) {
         return $false
     }
 
-    $cacheKey = "rk_$RatingKey"
-
-    try {
-        $metadata = Get-Content $metadataPath -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable
-    }
-    catch {
-        # Metadata file unreadable or invalid - nothing to clean up
+    if (-not (Get-Module -Name PlexAutomationToolkit -ListAvailable)) {
+        Write-Warning "PlexAutomationToolkit module not installed"
         return $false
     }
 
-    # Check if this RatingKey exists in cache
-    if (-not $metadata.items -or -not $metadata.items.ContainsKey($cacheKey)) {
-        # Entry doesn't exist - already cleaned up or never cached
-        return $false
-    }
+    # Ensure PAT config directories exist (required for CI runners)
+    $tempBase = [System.IO.Path]::GetTempPath()
+    if (-not $env:USERPROFILE) { $env:USERPROFILE = $tempBase }
+    if (-not $env:LOCALAPPDATA) { $env:LOCALAPPDATA = Join-Path $tempBase 'LocalAppData' }
 
-    $entry = $metadata.items[$cacheKey]
-
-    # Remove the actual file and its parent directory if they exist
-    if ($entry.LocalPath) {
-        $parentDir = Split-Path -Parent $entry.LocalPath
-        if ($parentDir -and (Test-Path $parentDir)) {
-            try {
-                Remove-Item -Path $parentDir -Recurse -Force -ErrorAction Stop
-                Write-Verbose "Removed cached directory: $parentDir"
-            }
-            catch {
-                # Directory may have already been removed by another process
-                Write-Verbose "Could not remove cached directory: $parentDir - $_"
-            }
+    $patConfigDirs = @(
+        (Join-Path $env:USERPROFILE 'Documents\PlexAutomationToolkit'),
+        (Join-Path $env:LOCALAPPDATA 'PlexAutomationToolkit')
+    )
+    foreach ($dir in $patConfigDirs) {
+        if (-not (Test-Path $dir)) {
+            New-Item -Path $dir -ItemType Directory -Force | Out-Null
         }
     }
 
-    # Update metadata to remove the entry
+    # Import module and configure server
+    Remove-Module PlexAutomationToolkit -ErrorAction 'SilentlyContinue'
+    Import-Module PlexAutomationToolkit -Force
+
     try {
-        $metadata.items.Remove($cacheKey)
-        $metadata | ConvertTo-Json -Depth 10 | Set-Content $metadataPath -Encoding UTF8
+        $existingServer = Get-PatStoredServer -Name 'CI-Plex' -ErrorAction 'SilentlyContinue'
+        if (-not $existingServer -or $existingServer.uri -ne $env:PAT_SERVER_URI) {
+            Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
+        } else {
+            Set-PatDefaultServer -Name 'CI-Plex' -ErrorAction 'SilentlyContinue'
+        }
     }
     catch {
-        Write-Warning "Failed to update cache metadata after removing RatingKey $RatingKey`: $_"
-        return $false
+        Add-PatServer -Name 'CI-Plex' -ServerUri $env:PAT_SERVER_URI -Token $env:PAT_TOKEN -Default -Force -SkipValidation
     }
 
     return $true
 }
 
-function Invoke-PlexMediaDownload {
+function Get-PlexTestRelease {
     <#
     .SYNOPSIS
-    Downloads a media file from Plex to the cache directory.
+    Discovers test releases from a Plex playlist by examining file paths.
 
-    .PARAMETER RatingKey
-    The Plex rating key for the media item.
+    .DESCRIPTION
+    Queries the specified Plex playlist and extracts scene release information
+    from the original file paths on the Plex server. Returns release metadata
+    that can be used to download SRRs from srrdb and run reconstruction tests.
 
-    .PARAMETER CachePath
-    Path to the cache directory.
-
-    .PARAMETER ServerUri
-    Plex server URI.
-
-    .PARAMETER Token
-    Plex authentication token.
+    .PARAMETER PlaylistName
+    Name of the Plex playlist containing test media.
 
     .OUTPUTS
-    [string] Path to the downloaded file
+    [PSCustomObject[]] Array of release objects with properties:
+    - ReleaseName: Scene release name extracted from file path
+    - RatingKey: Plex rating key for downloading
+    - Title: Plex title
+    - Type: Media type (movie/episode)
+    - FilePath: Original file path on Plex server
+    - FileName: Original file name
+    - FileSize: File size in bytes
+    - Container: File container (avi, mkv, etc.)
+    - VideoCodec: Video codec
+    - VideoResolution: Resolution (sd, 720, 1080, etc.)
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [int]$RatingKey,
-
-        [Parameter(Mandatory)]
-        [string]$CachePath,
-
-        [Parameter(Mandatory)]
-        [string]$ServerUri,
-
-        [Parameter(Mandatory)]
-        [string]$Token
+        [string]$PlaylistName
     )
 
-    # Get media info from Plex
-    $mediaInfo = Get-PatMediaInfo -RatingKey $RatingKey
-
-    if (-not $mediaInfo -or -not $mediaInfo.Media) {
-        throw "Could not get media info for RatingKey $RatingKey"
+    if (-not (Get-Module -Name PlexAutomationToolkit)) {
+        Import-Module PlexAutomationToolkit -ErrorAction 'Stop'
     }
 
-    # Get the first media part (main file)
-    $media = $mediaInfo.Media | Select-Object -First 1
-    $part = $media.Part | Select-Object -First 1
-
-    if (-not $part) {
-        throw "No media parts found for RatingKey $RatingKey"
+    # Get playlist items
+    $playlist = Get-PatPlaylist -PlaylistName $PlaylistName -IncludeItems -ErrorAction 'Stop'
+    if (-not $playlist -or -not $playlist.Items) {
+        Write-Warning "Playlist '$PlaylistName' is empty or not found"
+        return @()
     }
 
-    # Determine destination path
-    $extension = $part.Container
-    $safeTitle = $mediaInfo.Title -replace '[^\w\-\.]', '_'
-    $destDir = Join-Path $CachePath $safeTitle
-    $destPath = Join-Path $destDir "$safeTitle.$extension"
-
-    if (-not (Test-Path $destDir)) {
-        New-Item -Path $destDir -ItemType Directory -Force | Out-Null
-    }
-
-    # Construct download URL
-    $partKey = $part.Key
-    $downloadUrl = "$ServerUri$partKey`?download=1&X-Plex-Token=$Token"
-
-    Write-Verbose "Downloading from Plex: $($mediaInfo.Title) to $destPath"
-
-    # Download the file
-    try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $destPath -UseBasicParsing
-    }
-    catch {
-        throw "Failed to download from Plex: $_"
-    }
-
-    # Update cache metadata
-    $metadataPath = Join-Path $CachePath 'metadata.json'
-    if (Test-Path $metadataPath) {
-        $metadata = Get-Content $metadataPath -Raw | ConvertFrom-Json -AsHashtable
-    }
-    else {
-        $metadata = @{ items = @{} }
-    }
-
-    $cacheKey = "rk_$RatingKey"
-    $metadata.items[$cacheKey] = @{
-        LocalPath = $destPath
-        CachedAt  = (Get-Date).ToString('o')
-        Size      = $part.Size
-        Title     = $mediaInfo.Title
-        RatingKey = $RatingKey
-    }
-
-    $metadata | ConvertTo-Json -Depth 10 | Set-Content $metadataPath -Encoding UTF8
-
-    return $destPath
-}
-
-function Find-PlexItemByRelease {
-    <#
-    .SYNOPSIS
-    Finds a Plex library item that matches a scene release.
-
-    .PARAMETER ReleaseName
-    The scene release name to search for.
-
-    .PARAMETER Mapping
-    Optional mapping hashtable with search criteria (Title, Year, RatingKey, etc.)
-
-    .PARAMETER CollectionName
-    Name of the Plex collection to search within.
-
-    .PARAMETER LibraryName
-    Name of the Plex library to search.
-
-    .OUTPUTS
-    [object] Plex media info object, or $null if not found
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ReleaseName,
-
-        [hashtable]$Mapping,
-
-        [string]$CollectionName,
-
-        [string]$LibraryName = 'Movies'
-    )
-
-    # If we have a direct RatingKey, use it
-    if ($Mapping -and $Mapping.RatingKey) {
+    $releases = @()
+    foreach ($item in $playlist.Items) {
         try {
-            return Get-PatMediaInfo -RatingKey $Mapping.RatingKey
-        }
-        catch {
-            Write-Warning "Could not get media info for RatingKey $($Mapping.RatingKey): $_"
-        }
-    }
+            # Get detailed media info including file path
+            $mediaInfo = Get-PatMediaInfo -RatingKey $item.RatingKey -ErrorAction 'Stop'
 
-    # Search within a collection
-    if ($CollectionName) {
-        try {
-            $collection = Get-PatCollection -CollectionName $CollectionName -LibraryName $LibraryName -IncludeItems -ErrorAction Stop
+            # Use first media version only (Sync-PatMedia downloads one file per playlist item)
+            $media = $mediaInfo.Media | Select-Object -First 1
+            if ($media) {
+                $part = $media.Part | Select-Object -First 1
 
-            if ($collection -and $collection.Items) {
-                foreach ($item in $collection.Items) {
-                    $mediaInfo = Get-PatMediaInfo -RatingKey $item.RatingKey -ErrorAction SilentlyContinue
+                if (-not $part.File) {
+                    Write-Warning "No file path found for '$($item.Title)' (RatingKey: $($item.RatingKey))"
+                    continue
+                }
 
-                    if (-not $mediaInfo) { continue }
-
-                    # Check if the file path contains the release name
-                    $filePath = $mediaInfo.Media[0].Part[0].File
-                    if ($filePath -match [regex]::Escape($ReleaseName)) {
-                        return $mediaInfo
-                    }
-
-                    # Match by title/year from mapping
-                    if ($Mapping) {
-                        if ($Mapping.Title -and $mediaInfo.Title -like "*$($Mapping.Title)*") {
-                            if (-not $Mapping.Year -or $mediaInfo.Year -eq $Mapping.Year) {
-                                return $mediaInfo
-                            }
-                        }
+                # Extract release name from file path
+                # Path format: /mnt/.../Release.Name-GROUP/filename.ext
+                $releaseName = $null
+                $pathParts = $part.File -split '[/\\]'
+                foreach ($pathPart in $pathParts) {
+                    # Scene release pattern: Name.With.Dots-GROUP or Name.With.Dots.INTERNAL-GROUP
+                    if ($pathPart -match '^[A-Za-z0-9.]+-[A-Za-z0-9]+$' -or
+                        $pathPart -match '\.(XviD|x264|x265|HEVC|BluRay|DVDRip|BDRip|WEBRip|HDTV)[\.-]') {
+                        $releaseName = $pathPart
+                        break
                     }
                 }
+
+                if (-not $releaseName) {
+                    Write-Warning "Could not extract release name from path: $($part.File)"
+                    continue
+                }
+
+                $releases += [PSCustomObject]@{
+                    ReleaseName     = $releaseName
+                    RatingKey       = $item.RatingKey
+                    Title           = $mediaInfo.Title
+                    Type            = $mediaInfo.Type
+                    FilePath        = $part.File
+                    FileName        = Split-Path -Leaf $part.File
+                    FileSize        = $part.Size
+                    Container       = $part.Container
+                    VideoCodec      = $media.VideoCodec
+                    VideoResolution = $media.VideoResolution
+                }
+
+                Write-Verbose "Found release: $releaseName ($($media.VideoCodec) $($media.VideoResolution))"
             }
         }
         catch {
-            Write-Verbose "Error searching collection: $_"
+            Write-Warning "Failed to get media info for '$($item.Title)': $_"
         }
     }
 
-    return $null
-}
-
-function Get-PlexSourceFile {
-    <#
-    .SYNOPSIS
-    Gets a source file from Plex, using cache if available.
-
-    .DESCRIPTION
-    High-level function that checks cache first, then downloads from Plex if needed.
-    Includes retry logic for reliability.
-
-    .PARAMETER ReleaseName
-    The scene release name.
-
-    .PARAMETER Mapping
-    Mapping hashtable with search criteria.
-
-    .PARAMETER CachePath
-    Path to the cache directory.
-
-    .PARAMETER CacheTtlHours
-    Cache TTL in hours.
-
-    .PARAMETER CollectionName
-    Name of the Plex collection to search.
-
-    .PARAMETER LibraryName
-    Name of the Plex library.
-
-    .PARAMETER MaxRetries
-    Maximum download retry attempts.
-
-    .OUTPUTS
-    [string] Path to the source file
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ReleaseName,
-
-        [hashtable]$Mapping,
-
-        [string]$CachePath,
-
-        [int]$CacheTtlHours = 168,
-
-        [string]$CollectionName,
-
-        [string]$LibraryName = 'Movies',
-
-        [int]$MaxRetries = 3
-    )
-
-    $plexInfo = Get-PlexConnectionInfo
-    if (-not $plexInfo) {
-        throw "Plex connection not available. Set PAT_SERVER_URI and PAT_TOKEN environment variables, or configure PlexAutomationToolkit."
-    }
-
-    if (-not $CachePath) {
-        $CachePath = Get-PlexCachePath
-    }
-
-    # Check cache first if we have a RatingKey
-    if ($Mapping -and $Mapping.RatingKey) {
-        $cached = Get-CachedMediaFile -RatingKey $Mapping.RatingKey -CachePath $CachePath -CacheTtlHours $CacheTtlHours
-        if ($cached) {
-            Write-Verbose "Using cached file: $cached"
-            return $cached
-        }
-    }
-
-    # Find the item in Plex
-    $mediaInfo = Find-PlexItemByRelease -ReleaseName $ReleaseName -Mapping $Mapping -CollectionName $CollectionName -LibraryName $LibraryName
-
-    if (-not $mediaInfo) {
-        throw "Could not find Plex item matching '$ReleaseName'"
-    }
-
-    # Check cache with the found RatingKey
-    $cached = Get-CachedMediaFile -RatingKey $mediaInfo.RatingKey -CachePath $CachePath -CacheTtlHours $CacheTtlHours
-    if ($cached) {
-        Write-Verbose "Using cached file: $cached"
-        return $cached
-    }
-
-    # Download with retries
-    $attempt = 0
-    $lastError = $null
-
-    while ($attempt -lt $MaxRetries) {
-        $attempt++
-        try {
-            $result = Invoke-PlexMediaDownload `
-                -RatingKey $mediaInfo.RatingKey `
-                -CachePath $CachePath `
-                -ServerUri $plexInfo.ServerUri `
-                -Token $plexInfo.Token
-
-            return $result
-        }
-        catch {
-            $lastError = $_
-            $delay = [math]::Pow(2, $attempt)
-            Write-Warning "Download attempt $attempt failed: $_. Retrying in $delay seconds..."
-            Start-Sleep -Seconds $delay
-        }
-    }
-
-    throw "Failed to download after $MaxRetries attempts: $lastError"
-}
-
-function Clear-PlexTestCache {
-    <#
-    .SYNOPSIS
-    Clears all cached Plex test files.
-
-    .PARAMETER CachePath
-    Optional custom cache path.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$CachePath
-    )
-
-    $path = Get-PlexCachePath -CustomPath $CachePath
-    if (Test-Path $path) {
-        Remove-Item -Path $path -Recurse -Force
-        Write-Verbose "Cleared Plex test cache at: $path"
-    }
-}
-
-function Get-PlexTestCacheInfo {
-    <#
-    .SYNOPSIS
-    Gets information about the Plex test cache.
-
-    .PARAMETER CachePath
-    Optional custom cache path.
-
-    .OUTPUTS
-    [hashtable] Cache statistics
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$CachePath
-    )
-
-    $path = Get-PlexCachePath -CustomPath $CachePath
-    if (-not (Test-Path $path)) {
-        return @{
-            Exists    = $false
-            Path      = $path
-            Size      = 0
-            SizeGB    = 0
-            ItemCount = 0
-        }
-    }
-
-    $files = Get-ChildItem -Path $path -Recurse -File
-    $totalSize = ($files | Measure-Object -Property Length -Sum).Sum
-
-    return @{
-        Exists    = $true
-        Path      = $path
-        Size      = $totalSize
-        SizeGB    = [math]::Round($totalSize / 1GB, 2)
-        ItemCount = $files.Count
-    }
+    return $releases
 }
 
 #endregion
@@ -862,15 +415,7 @@ Export-ModuleMember -Function @(
     'New-TestTempDirectory'
     'Remove-TestTempDirectory'
     # Plex data source functions
-    'Test-PlexModuleAvailable'
-    'Get-PlexConnectionInfo'
-    'Test-PlexConnectionAvailable'
-    'Get-PlexCachePath'
-    'Get-CachedMediaFile'
-    'Remove-CachedMediaFile'
-    'Invoke-PlexMediaDownload'
-    'Find-PlexItemByRelease'
-    'Get-PlexSourceFile'
-    'Clear-PlexTestCache'
-    'Get-PlexTestCacheInfo'
+    'Test-PlexAvailable'
+    'Initialize-PlexForCI'
+    'Get-PlexTestRelease'
 )

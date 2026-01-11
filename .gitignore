@@ -17,6 +17,9 @@ tests/samples/*.avi
 tests/samples/*.rar
 tests/samples/*.mp4
 
+# Local test configuration (user-specific Plex RatingKeys, paths, etc.)
+tests/TestConfig.Local.psd1
+
 # IDE
 .idea/
 *.suo

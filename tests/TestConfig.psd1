@@ -1,12 +1,11 @@
 # ReScenePS Functional Test Configuration
 # This file is committed to git and used by CI
-# For local network paths, create TestConfig.Local.psd1 (gitignored)
 
 @{
     # ==========================================================================
     # SRR PARSING TESTS (no source files needed)
-    # These test Get-SrrBlock and Show-SrrInfo
-    # Organized by release type for comprehensive codec/format coverage
+    # These test Get-SrrBlock and Show-SrrInfo using pre-downloaded SRR files
+    # in tests/samples/. Organized by release type for comprehensive coverage.
     # ==========================================================================
     SrrParsingTests = @(
         # ------------------------------------------------------------------
@@ -171,108 +170,14 @@
     )
 
     # ==========================================================================
-    # RAR RECONSTRUCTION TESTS
-    # These test Invoke-SrrReconstruct and Invoke-SrrRestore
-    # Requires: SRR file + source content (downloaded from Plex via PlexSourceMappings)
-    #
-    # NOTE: For CI, we use only the smallest release to conserve disk space.
-    # DVDRip XviD (~350MB) is much smaller than BluRay HD releases (6-12GB).
-    # Local testing can use TestConfig.Local.psd1 to test additional releases.
-    # ==========================================================================
-    SrrReconstructionTests = @(
-        # Smallest release - DVDRip XviD (~350MB vs 6-12GB for BluRay)
-        @{
-            ReleaseName      = '24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE'
-            SrrPath          = 'tests\samples\24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE.srr'
-            RelativeTo       = 'ProjectRoot'
-            ReleaseType      = 'TV-XviD'
-        }
-    )
-
-    # ==========================================================================
-    # SRS SAMPLE RECONSTRUCTION TESTS
-    # These test ConvertFrom-SrsFileMetadata, Build-SampleMkvFromSrs, Restore-SrsVideo
-    # Requires: SRS file (extracted from SRR) + source MKV (extracted from release RARs)
-    # Note: AVI samples (XviD) require AVI reconstruction support (not yet implemented)
-    # ==========================================================================
-    SrsSampleTests = @(
-        # MKV sample tests will be populated dynamically from SrrReconstructionTests
-        # where SampleType = 'MKV'
-    )
-
-    # ==========================================================================
     # PLEX DATA SOURCE CONFIGURATION
-    # Enables running tests with source files downloaded from a Plex server
-    # For CI: Set PAT_SERVER_URI and PAT_TOKEN environment variables/secrets
+    # Reconstruction and integration tests dynamically discover releases from
+    # this Plex playlist. Add items to the playlist to test different codecs,
+    # resolutions, and release types. SRRs are downloaded from srrdb.
+    #
+    # Auto-enabled when PAT_SERVER_URI/PAT_TOKEN env vars are set.
     # ==========================================================================
     PlexDataSource = @{
-        Enabled       = $true
-        CollectionName = 'ReScenePS-TestData'
-        LibraryName   = 'Movies'
-        CachePath     = $null  # Uses Get-PlexCachePath (supports RUNNER_TEMP for CI)
-        CacheTtlHours = 168    # 1 week
-    }
-
-    # ==========================================================================
-    # RESTORE-RELEASE INTEGRATION TESTS
-    # Tests the full Restore-Release automation workflow
-    # Uses real srrdb queries to download SRR files and additional content
-    # ==========================================================================
-    RestoreReleaseTests = @(
-        # Release with proof image - tests additional file download
-        @{
-            ReleaseName     = 'The.Mummy.Resurrected.2014.PROPER.DVDRiP.X264-TASTE'
-            ReleaseType     = 'Movie-SD-x264'
-            HasProof        = $true
-            HasSrs          = $true
-            # Small release - good for testing
-        }
-        # Release with proof image - 1080p
-        @{
-            ReleaseName     = '009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa'
-            ReleaseType     = 'Movie-1080p-x264'
-            HasProof        = $true
-            HasSrs          = $true
-        }
-    )
-
-    # ==========================================================================
-    # PLEX SOURCE MAPPINGS
-    # Maps release names to Plex RatingKeys for downloading source files
-    # To find RatingKeys, run:
-    #   Get-PatLibraryItem -SectionName 'Movies' | Where-Object { $_.title -like '*Title*' }
-    # ==========================================================================
-    PlexSourceMappings = @{
-        # Movies
-        '007.For.Your.Eyes.Only.1981.720p.BluRay.x264-HANGOVER.srr' = @{
-            RatingKey = 4
-            Title     = 'For Your Eyes Only'
-            Year      = 1981
-        }
-        '009-1.The.End.Of.The.Beginning.2013.1080p.BluRay.x264-PFa.srr' = @{
-            RatingKey = 2165
-            Title     = '009-1: The End of the Beginning'
-            Year      = 2013
-        }
-
-        # TV Shows (episode-level RatingKeys)
-        'Game.of.Thrones.S01E01.720p.BluRay.X264-REWARD.srr' = @{
-            RatingKey = 14501
-            ShowTitle = 'Game of Thrones'
-            Season    = 1
-            Episode   = 1
-        }
-        'Game.Of.Thrones.S01E01.1080p.BluRay.x264-HD4U.srr' = @{
-            RatingKey = 14501
-            ShowTitle = 'Game of Thrones'
-            Season    = 1
-            Episode   = 1
-        }
-        '24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE.srr' = @{
-            RatingKey = 26965
-            ShowTitle = '24'
-            Season    = 1
-            Episode   = 1
-        }
+        PlaylistName = 'ReScenePS-TestData'
     }
 }
