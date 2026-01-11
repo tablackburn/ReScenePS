@@ -41,7 +41,7 @@ jobs:
         Write-Host "PSScriptAnalyzer passed with no errors"
 
   test:
-    name: Run Tests (${{ matrix.os }})
+    name: Unit Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
