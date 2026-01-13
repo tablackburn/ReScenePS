@@ -330,4 +330,94 @@ Describe 'Invoke-SrrReconstruct' {
                 Should -Throw '*not found*'
         }
     }
+
+    Context 'Non-standard volume naming fallback' {
+        BeforeAll {
+            # Create SRR with a non-standard volume extension (e.g., .001)
+            # This exercises the else { 999 } branch in volume sorting
+            $script:nonStdNamingDir = Join-Path $script:tempDir 'non-std-naming'
+            New-Item -Path $script:nonStdNamingDir -ItemType Directory -Force | Out-Null
+
+            $script:nonStdNamingSrr = Join-Path $script:nonStdNamingDir 'release.srr'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # SRR Header block
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp12345')
+            $headerSize = 7 + 2 + $appName.Length
+            $bw.Write([uint16]0x6969)
+            $bw.Write([byte]0x69)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$headerSize)
+            $bw.Write([uint16]$appName.Length)
+            $bw.Write($appName)
+
+            # SRR RAR File block with non-standard extension (.001)
+            $rarFileName = 'archive.001'
+            $rarFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($rarFileName)
+            $srrRarBlockSize = 7 + 2 + $rarFileNameBytes.Length
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x71)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$srrRarBlockSize)
+            $bw.Write([uint16]$rarFileNameBytes.Length)
+            $bw.Write($rarFileNameBytes)
+
+            # RAR Marker block
+            $bw.Write([byte[]]@(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00))
+
+            # RAR Volume Header block
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x73)
+            $bw.Write([uint16]0x0001)
+            $bw.Write([uint16]13)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint32]0x00000000)
+
+            # RAR Packed File block
+            $packedFileName = 'test.dat'
+            $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x74)
+            $bw.Write([uint16]0x8000)
+            $bw.Write([uint16]$packedBlockSize)
+            $bw.Write([uint32]20)       # PackSize
+            $bw.Write([uint32]20)       # UnpSize
+            $bw.Write([byte]0x00)
+            $bw.Write([uint32]0x12345678)
+            $bw.Write([uint32]0x00000000)
+            $bw.Write([byte]0x15)
+            $bw.Write([byte]0x30)
+            $bw.Write([uint16]$packedFileNameBytes.Length)
+            $bw.Write([uint32]0x00000020)
+            $bw.Write($packedFileNameBytes)
+
+            # RAR End Archive block
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x7B)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]7)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:nonStdNamingSrr, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+
+            # Create source file
+            $script:nonStdSource = Join-Path $script:nonStdNamingDir 'test.dat'
+            [System.IO.File]::WriteAllBytes($script:nonStdSource, [byte[]](1..20))
+        }
+
+        It 'Handles volumes with non-standard extensions' {
+            $outputDir = Join-Path $script:nonStdNamingDir 'output'
+            New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
+
+            Invoke-SrrReconstruct -SrrFile $script:nonStdNamingSrr -SourcePath $script:nonStdNamingDir -OutputPath $outputDir -SkipValidation
+
+            # Verify the non-standard volume was created
+            Test-Path (Join-Path $outputDir 'archive.001') | Should -BeTrue
+        }
+    }
 }

@@ -594,4 +594,139 @@ Describe 'Invoke-SrrRestore' {
             Test-Path $sampleFile | Should -BeTrue
         }
     }
+
+    Context 'Old-style volume naming (.partXX.rar)' {
+        BeforeAll {
+            $script:partNamingDir = Join-Path $script:tempDir 'part-naming-test'
+            New-Item -Path $script:partNamingDir -ItemType Directory -Force | Out-Null
+
+            $script:partNamingSrr = Join-Path $script:partNamingDir 'release.srr'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # SRR Header block
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp12345')
+            $headerSize = 7 + 2 + $appName.Length
+            $bw.Write([uint16]0x6969)
+            $bw.Write([byte]0x69)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$headerSize)
+            $bw.Write([uint16]$appName.Length)
+            $bw.Write($appName)
+
+            # Source file name used in both volumes
+            $packedFileName = 'content.dat'
+            $packedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($packedFileName)
+            $packedBlockSize = 7 + 25 + $packedFileNameBytes.Length
+
+            # Volume 1: release.part01.rar
+            $rarFileName1 = 'release.part01.rar'
+            $rarFileNameBytes1 = [System.Text.Encoding]::UTF8.GetBytes($rarFileName1)
+            $srrRarBlockSize1 = 7 + 2 + $rarFileNameBytes1.Length
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x71)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$srrRarBlockSize1)
+            $bw.Write([uint16]$rarFileNameBytes1.Length)
+            $bw.Write($rarFileNameBytes1)
+
+            # RAR Marker block
+            $bw.Write([byte[]]@(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00))
+
+            # RAR Volume Header block (with VOLUME flag)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x73)
+            $bw.Write([uint16]0x0001)  # Volume attribute
+            $bw.Write([uint16]13)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint32]0x00000000)
+
+            # RAR Packed File block for first volume (first 25 bytes of content)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x74)
+            $bw.Write([uint16]0x8000)
+            $bw.Write([uint16]$packedBlockSize)
+            $bw.Write([uint32]25)       # PackSize (first 25 bytes)
+            $bw.Write([uint32]50)       # UnpSize (total size)
+            $bw.Write([byte]0x00)
+            $bw.Write([uint32]0x12345678)
+            $bw.Write([uint32]0x00000000)
+            $bw.Write([byte]0x15)
+            $bw.Write([byte]0x30)
+            $bw.Write([uint16]$packedFileNameBytes.Length)
+            $bw.Write([uint32]0x00000020)
+            $bw.Write($packedFileNameBytes)
+
+            # RAR End Archive block
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x7B)
+            $bw.Write([uint16]0x4000)  # NEXT_VOLUME flag
+            $bw.Write([uint16]7)
+
+            # Volume 2: release.part02.rar
+            $rarFileName2 = 'release.part02.rar'
+            $rarFileNameBytes2 = [System.Text.Encoding]::UTF8.GetBytes($rarFileName2)
+            $srrRarBlockSize2 = 7 + 2 + $rarFileNameBytes2.Length
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x71)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$srrRarBlockSize2)
+            $bw.Write([uint16]$rarFileNameBytes2.Length)
+            $bw.Write($rarFileNameBytes2)
+
+            # RAR Marker block
+            $bw.Write([byte[]]@(0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00))
+
+            # RAR Volume Header block
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x73)
+            $bw.Write([uint16]0x0001)
+            $bw.Write([uint16]13)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint32]0x00000000)
+
+            # RAR Packed File block for second volume (remaining 25 bytes)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x74)
+            $bw.Write([uint16]0x8000)
+            $bw.Write([uint16]$packedBlockSize)
+            $bw.Write([uint32]25)       # PackSize (remaining 25 bytes)
+            $bw.Write([uint32]50)       # UnpSize
+            $bw.Write([byte]0x00)
+            $bw.Write([uint32]0x12345678)
+            $bw.Write([uint32]0x00000000)
+            $bw.Write([byte]0x15)
+            $bw.Write([byte]0x30)
+            $bw.Write([uint16]$packedFileNameBytes.Length)
+            $bw.Write([uint32]0x00000020)
+            $bw.Write($packedFileNameBytes)
+
+            # RAR End Archive block
+            $bw.Write([uint16]0x0000)
+            $bw.Write([byte]0x7B)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]7)
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:partNamingSrr, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+
+            # Create source file (50 bytes)
+            $script:partNamingSource = Join-Path $script:partNamingDir 'content.dat'
+            [System.IO.File]::WriteAllBytes($script:partNamingSource, [byte[]](1..50))
+        }
+
+        It 'Sorts .partXX.rar volumes correctly' {
+            $outputDir = Join-Path $script:partNamingDir 'output'
+            New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
+
+            Invoke-SrrRestore -SrrFile $script:partNamingSrr -SourcePath $script:partNamingDir -OutputPath $outputDir -SkipValidation
+
+            # Verify both volumes were created
+            Test-Path (Join-Path $outputDir 'release.part01.rar') | Should -BeTrue
+            Test-Path (Join-Path $outputDir 'release.part02.rar') | Should -BeTrue
+        }
+    }
 }
