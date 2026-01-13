@@ -420,4 +420,58 @@ Describe 'Invoke-SrrReconstruct' {
             Test-Path (Join-Path $outputDir 'archive.001') | Should -BeTrue
         }
     }
+
+    Context 'Path traversal protection' {
+        BeforeAll {
+            $script:traversalDir = Join-Path $script:tempDir 'path-traversal'
+            New-Item -Path $script:traversalDir -ItemType Directory -Force | Out-Null
+
+            $script:traversalSrr = Join-Path $script:traversalDir 'release.srr'
+
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+
+            # SRR Header block
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp12345')
+            $headerSize = 7 + 2 + $appName.Length
+            $bw.Write([uint16]0x6969)
+            $bw.Write([byte]0x69)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$headerSize)
+            $bw.Write([uint16]$appName.Length)
+            $bw.Write($appName)
+
+            # SRR Stored File block with path traversal filename
+            $maliciousFileName = '..\..\evil.txt'
+            $storedFileNameBytes = [System.Text.Encoding]::UTF8.GetBytes($maliciousFileName)
+            $storedContent = [System.Text.Encoding]::UTF8.GetBytes('malicious content')
+            $storedBlockHeaderSize = 7 + 4 + 2 + $storedFileNameBytes.Length
+            $bw.Write([uint16]0x0000)  # CRC
+            $bw.Write([byte]0x6A)       # Type = SrrStoredFile
+            $bw.Write([uint16]0x8000)   # Flags (LONG_BLOCK)
+            $bw.Write([uint16]$storedBlockHeaderSize)  # HeadSize
+            $bw.Write([uint32]$storedContent.Length)   # AddSize (file size)
+            $bw.Write([uint16]$storedFileNameBytes.Length)  # NameLen
+            $bw.Write($storedFileNameBytes)  # FileName
+            $bw.Write($storedContent)  # File data
+
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($script:traversalSrr, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Throws on path traversal attempt in stored file' {
+            $outputDir = Join-Path $script:traversalDir 'output'
+            New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
+
+            { Invoke-SrrReconstruct -SrrFile $script:traversalSrr -SourcePath $script:traversalDir -OutputPath $outputDir -ExtractStoredFiles } |
+                Should -Throw '*Path traversal detected*'
+
+            # Verify no file was created outside OutputPath
+            $parentDir = Split-Path $outputDir -Parent
+            $evilFile = Join-Path $parentDir 'evil.txt'
+            Test-Path $evilFile | Should -BeFalse
+        }
+    }
 }

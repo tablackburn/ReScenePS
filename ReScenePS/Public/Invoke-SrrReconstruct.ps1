@@ -75,6 +75,15 @@ function Invoke-SrrReconstruct {
                     if ($block -is [SrrStoredFileBlock]) {
                         $relativePath = $block.FileName.TrimStart([char]92, [char]47)
                         $targetPath = Join-Path $OutputPath $relativePath
+
+                        # Prevent path traversal attacks (e.g., "..\..\file.txt")
+                        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
+                        $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+                        if (-not $resolvedPath.StartsWith($resolvedOutputPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            throw "Path traversal detected in stored file: $($block.FileName)"
+                        }
+                        $targetPath = $resolvedPath
+
                         $targetDir = Split-Path $targetPath -Parent
                         if ($targetDir -and -not (Test-Path $targetDir)) {
                             [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
