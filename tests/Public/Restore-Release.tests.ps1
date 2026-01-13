@@ -250,11 +250,15 @@ Describe 'Restore-Release' {
             $script:additionalFilesDir = Join-Path $script:tempDir 'additional-files-test'
             New-Item -Path $script:additionalFilesDir -ItemType Directory -Force | Out-Null
 
+            # Create test subdirectory
+            $script:additionalFilesTestDir = Join-Path $script:additionalFilesDir 'no-srr-subdir'
+            New-Item -Path $script:additionalFilesTestDir -ItemType Directory -Force | Out-Null
+
             # Create a minimal valid SRR file for mocking
             $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp12345')
             $headerSize = 7 + 2 + $appName.Length
 
-            $script:mockSrrFile = Join-Path $script:additionalFilesDir 'additional-files-test.srr'
+            $script:mockSrrFile = Join-Path $script:additionalFilesTestDir 'no-srr-subdir.srr'
             $ms = [System.IO.MemoryStream]::new()
             $bw = [System.IO.BinaryWriter]::new($ms)
 
@@ -269,15 +273,13 @@ Describe 'Restore-Release' {
             [System.IO.File]::WriteAllBytes($script:mockSrrFile, $ms.ToArray())
             $bw.Dispose()
             $ms.Dispose()
-        }
 
-        It 'Reports downloaded additional files when present' {
             # Mock Get-SatReleaseFile to return AdditionalFiles
             Mock Get-SatReleaseFile {
                 [PSCustomObject]@{
                     SrrFile = [PSCustomObject]@{
                         FullName = $script:mockSrrFile
-                        Name = 'additional-files-test.srr'
+                        Name = 'no-srr-subdir.srr'
                     }
                     AdditionalFiles = @(
                         [PSCustomObject]@{ Name = 'proof.jpg' },
@@ -288,13 +290,14 @@ Describe 'Restore-Release' {
 
             # Mock Invoke-SrrRestore to prevent actual restoration
             Mock Invoke-SrrRestore { } -ModuleName ReScenePS
+        }
 
-            # Run without existing SRR (delete the one we created for mock return value)
-            $testDir = Join-Path $script:additionalFilesDir 'no-srr-subdir'
-            New-Item -Path $testDir -ItemType Directory -Force | Out-Null
+        It 'Reports downloaded additional files when present' {
+            # Delete existing SRR so Get-SatReleaseFile is called
+            Remove-Item -Path $script:mockSrrFile -Force -ErrorAction SilentlyContinue
 
             # Run and capture output
-            $result = Restore-Release -Path $testDir -ErrorAction SilentlyContinue
+            $result = Restore-Release -Path $script:additionalFilesTestDir -ErrorAction SilentlyContinue
 
             # Verify mocks were called
             Should -Invoke Get-SatReleaseFile -Times 1 -ModuleName ReScenePS
