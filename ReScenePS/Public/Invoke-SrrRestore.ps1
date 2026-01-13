@@ -68,8 +68,7 @@ function Invoke-SrrRestore {
     Write-Host "===========================================================" -ForegroundColor Cyan
     Write-Host ""
 
-    # Track files we create for potential cleanup
-    $createdFiles = @()
+    # Track validation status for cleanup decisions
     $validationPassed = $false
 
     try {
@@ -222,7 +221,6 @@ function Invoke-SrrRestore {
                         $fileData = $br.ReadBytes([int]$block.FileSize)
                         if ($PSCmdlet.ShouldProcess($targetPath, "Write stored file")) {
                             [System.IO.File]::WriteAllBytes($targetPath, $fileData)
-                            $createdFiles += $targetPath
                             if ($targetPath.ToLower().EndsWith('.srs')) {
                                 $info = Get-SrsInfo -FilePath $targetPath
                                 Write-Host ("  [OK] Extracted SRS: {0} [{1}]" -f $block.FileName, $info.Type) -ForegroundColor Green
@@ -261,11 +259,7 @@ function Invoke-SrrRestore {
                     $sourcePath = $sourceFiles.Values | Select-Object -First 1 | Select-Object -ExpandProperty Path
 
                     if ($sourcePath -and (Test-Path $sourcePath)) {
-                        $reconstructed = Restore-SrsVideo -SrsFilePath $srsPath -SourceMkvPath $sourcePath -OutputMkvPath $sampleBaseName
-
-                        if ($reconstructed) {
-                            $createdFiles += $sampleBaseName
-                        }
+                        Restore-SrsVideo -SrsFilePath $srsPath -SourceMkvPath $sourcePath -OutputMkvPath $sampleBaseName | Out-Null
                     }
                     else {
                         Write-Warning "  Source file not available for SRS reconstruction"
@@ -416,7 +410,6 @@ function Invoke-SrrRestore {
                     $rarStream.Close()
                 }
 
-                $createdFiles += $outputFile
                 $fileSize = (Get-Item $outputFile).Length
                 Write-Host "  [OK] Created: $volumeName ($fileSize bytes)" -ForegroundColor Green
             }
