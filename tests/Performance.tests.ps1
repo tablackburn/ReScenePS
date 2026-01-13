@@ -23,7 +23,7 @@ BeforeAll {
     # Performance thresholds (in milliseconds)
     $script:Thresholds = @{
         ByteArrayCompare1KB    = 10      # 1KB array comparison
-        ByteArrayCompare1MB    = 3500    # 1MB array comparison (increased for CI variance)
+        ByteArrayCompare1MB    = 5000    # 1MB array comparison (increased for CI variance)
         EbmlParse1000Elements  = 750     # Parse 1000 EBML elements (increased for CI variance)
         BlockReaderInit        = 50      # BlockReader initialization
         CRC32Calc1MB           = 500     # CRC32 of 1MB file (using CRC module)
@@ -62,6 +62,9 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
                 $b = [byte[]]::new($size)
                 [System.Random]::new(42).NextBytes($a)
                 [Array]::Copy($a, $b, $size)
+
+                # Warmup: run once to ensure JIT compilation
+                $null = Compare-ByteArray -Array1 $a -Array2 $b
 
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 $null = Compare-ByteArray -Array1 $a -Array2 $b
