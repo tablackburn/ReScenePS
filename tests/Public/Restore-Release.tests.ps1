@@ -247,18 +247,70 @@ Describe 'Restore-Release' {
     }
 
     Context 'Additional files download' {
-        It 'Has code path for handling additional downloaded files' {
-            # Verify the function contains the AdditionalFiles handling code
-            $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'AdditionalFiles'
-            $functionDef | Should -Match 'AdditionalFiles\.Count'
-            $functionDef | Should -Match 'foreach.*\$file.*AdditionalFiles'
+        BeforeAll {
+            $script:additionalFilesDir = Join-Path $script:tempDir 'additional-files-test'
+            New-Item -Path $script:additionalFilesDir -ItemType Directory -Force | Out-Null
         }
 
-        It 'Reports each additional file when present' {
-            # Verify the output formatting for additional files
-            $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match '\[OK\].*Downloaded.*\$file\.Name'
+        It 'Outputs additional files when returned by Get-SatReleaseFile' -Skip:(-not (Get-Module SrrDBAutomationToolkit -ListAvailable)) {
+            InModuleScope ReScenePS -Parameters @{ testDir = $script:additionalFilesDir } {
+                param($testDir)
+
+                # Don't create SRR file - we want Get-SatReleaseFile to be called
+                # The mock will "create" the SRR file path
+                $srrPath = Join-Path $testDir 'test-release.srr'
+
+                # Mock Get-SatReleaseFile to return AdditionalFiles
+                Mock Get-SatReleaseFile {
+                    # Create minimal SRR when mock is called (simulating download)
+                    $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp')
+                    $headerSize = 7 + 2 + $appName.Length
+                    $ms = [System.IO.MemoryStream]::new()
+                    $bw = [System.IO.BinaryWriter]::new($ms)
+                    $bw.Write([uint16]0x6969)
+                    $bw.Write([byte]0x69)
+                    $bw.Write([uint16]0x0000)
+                    $bw.Write([uint16]$headerSize)
+                    $bw.Write([uint16]$appName.Length)
+                    $bw.Write($appName)
+                    $bw.Flush()
+                    [System.IO.File]::WriteAllBytes($srrPath, $ms.ToArray())
+                    $bw.Dispose()
+                    $ms.Dispose()
+
+                    [PSCustomObject]@{
+                        SrrFile = [PSCustomObject]@{
+                            FullName = $srrPath
+                            Name = 'test-release.srr'
+                        }
+                        AdditionalFiles = @(
+                            [PSCustomObject]@{ Name = 'proof.jpg' }
+                            [PSCustomObject]@{ Name = 'sample.avi' }
+                        )
+                    }
+                }
+
+                # Mock Invoke-SrrRestore to prevent actual restoration
+                Mock Invoke-SrrRestore {}
+
+                # Run Restore-Release and capture output
+                $output = Restore-Release -Path $testDir 6>&1
+
+                # Verify mocks were called
+                Should -Invoke Get-SatReleaseFile -Times 1
+                Should -Invoke Invoke-SrrRestore -Times 1
+
+                # Verify additional files were reported in output
+                $outputText = $output -join "`n"
+                $outputText | Should -Match 'proof\.jpg'
+                $outputText | Should -Match 'sample\.avi'
+            }
+        }
+
+        AfterAll {
+            if ($script:additionalFilesDir -and (Test-Path $script:additionalFilesDir)) {
+                Remove-Item -Path $script:additionalFilesDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
