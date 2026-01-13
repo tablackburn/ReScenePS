@@ -7,7 +7,8 @@ function Restore-Release {
         This is the main automation command for ReScenePS. It performs:
         - Detection of release names from directory names
         - Querying srrDB for release metadata
-        - Downloading SRR files and any additional files (proofs, etc.) not stored in the SRR
+        - Downloading SRR files and any additional files from srrDB (proof images, samples, etc.
+          that are stored separately on srrDB rather than embedded in the SRR file)
         - Calling Invoke-SrrRestore to rebuild the release with original names and structure
 
         Requires the SrrDBAutomationToolkit module for srrDB API access.
@@ -21,8 +22,9 @@ function Restore-Release {
         Process each subdirectory as a separate release instead of the root directory.
 
     .PARAMETER SourcePath
-        Directory containing source files for reconstruction. Defaults to the release directory.
-        Can be set to a different location if source files are stored separately.
+        Directory containing source files for reconstruction (e.g., .mkv files).
+        Defaults to the release directory being processed.
+        Use this when source files are stored in a different location than the release folder.
 
     .PARAMETER KeepSrr
         Keep the SRR file after successful restoration.
@@ -158,7 +160,7 @@ function Restore-Release {
                         $srrPath = $downloadResult.SrrFile.FullName
                         Write-Host "  [OK] Downloaded: $($downloadResult.SrrFile.Name)" -ForegroundColor Green
 
-                        if ($downloadResult.AdditionalFiles.Count -gt 0) {
+                        if ($downloadResult.AdditionalFiles -and $downloadResult.AdditionalFiles.Count -gt 0) {
                             foreach ($file in $downloadResult.AdditionalFiles) {
                                 Write-Host "  [OK] Downloaded: $($file.Name)" -ForegroundColor Green
                             }
@@ -182,7 +184,7 @@ function Restore-Release {
 
                     $restoreParams = @{
                         SrrFile    = $srrPath
-                        SourcePath = if ($SourcePath) { $SourcePath } else { $releaseDir }
+                        SourcePath = if (-not [string]::IsNullOrWhiteSpace($SourcePath)) { $SourcePath } else { $releaseDir }
                         OutputPath = $releaseDir
                     }
 

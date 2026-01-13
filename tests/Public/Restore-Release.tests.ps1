@@ -267,9 +267,9 @@ Describe 'Restore-Release' {
             $script:errorTestDir = Join-Path $script:tempDir 'error-test'
             New-Item -Path $script:errorTestDir -ItemType Directory -Force | Out-Null
 
-            # Create subdirectories that will fail (no SRR, invalid release names)
-            $script:failDir1 = Join-Path $script:errorTestDir 'Invalid.Release.Name.1-FAIL'
-            $script:failDir2 = Join-Path $script:errorTestDir 'Invalid.Release.Name.2-FAIL'
+            # Create subdirectories that will fail (no SRR, guaranteed-invalid release names using UUIDs)
+            $script:failDir1 = Join-Path $script:errorTestDir 'RESCENEPS_TEST_INVALID_a1b2c3d4e5f6'
+            $script:failDir2 = Join-Path $script:errorTestDir 'RESCENEPS_TEST_INVALID_f6e5d4c3b2a1'
             New-Item -Path $script:failDir1 -ItemType Directory -Force | Out-Null
             New-Item -Path $script:failDir2 -ItemType Directory -Force | Out-Null
         }
@@ -317,6 +317,38 @@ Describe 'Restore-Release' {
         It 'Displays summary after processing' {
             $functionDef = (Get-Command Restore-Release).Definition
             $functionDef | Should -Match 'Summary'
+        }
+    }
+
+    Context 'SourcePath parameter usage' {
+        It 'Uses SourcePath when provided instead of release directory' {
+            $functionDef = (Get-Command Restore-Release).Definition
+            # Check that SourcePath is passed to Invoke-SrrRestore when not empty
+            $functionDef | Should -Match 'SourcePath.*IsNullOrWhiteSpace'
+        }
+    }
+
+    Context 'Results isolation between calls' {
+        It 'Does not accumulate counters across multiple calls' {
+            # Create a parent directory with two subdirectories for Recurse mode
+            $parentDir = Join-Path $script:tempDir 'isolation-test-parent'
+            $testDir1 = Join-Path $parentDir 'RESCENEPS_TEST_ISOLATION_1'
+            $testDir2 = Join-Path $parentDir 'RESCENEPS_TEST_ISOLATION_2'
+            New-Item -Path $testDir1, $testDir2 -ItemType Directory -Force | Out-Null
+
+            # First call with Recurse - processes 2 dirs, both fail (no SRR)
+            $result1 = Restore-Release -Path $parentDir -Recurse -ErrorAction SilentlyContinue 2>$null
+
+            # Second call with Recurse - processes same 2 dirs
+            $result2 = Restore-Release -Path $parentDir -Recurse -ErrorAction SilentlyContinue 2>$null
+
+            # Each call should have its own isolated counter (Processed = 2 each)
+            # If scope pollution existed, second call would show Processed = 4
+            $result1.Processed | Should -Be 2
+            $result2.Processed | Should -Be 2
+
+            # Cleanup
+            Remove-Item -Path $parentDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
