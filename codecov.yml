@@ -5,9 +5,7 @@ coverage:
         target: auto
     patch:
       default:
-        # Allow up to 10% coverage drop from auto-calculated target
-        # Some code paths (e.g., AdditionalFiles from srrDB) require integration tests
-        threshold: 10%
+        target: auto
 
 ignore:
   - "**/Classes/Crc32.ps1"
