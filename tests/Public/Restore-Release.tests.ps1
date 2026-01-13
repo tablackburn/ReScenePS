@@ -197,7 +197,8 @@ Describe 'Restore-Release' {
     Context 'Release name detection' {
         It 'Uses folder name as release name' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Split-Path.*Leaf'
+            # Uses GetFileName to extract directory name (handles edge cases better than Split-Path -Leaf)
+            $functionDef | Should -Match 'GetFileName'
         }
     }
 

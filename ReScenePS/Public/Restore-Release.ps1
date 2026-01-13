@@ -91,8 +91,8 @@ function Restore-Release {
         # Resolve path
         $Path = (Resolve-Path -Path $Path).Path
 
-        # Track results for summary
-        $script:results = @{
+        # Track results for summary (local variable to avoid accumulation across calls)
+        $results = @{
             Processed = 0
             Succeeded = 0
             Failed    = 0
@@ -128,8 +128,14 @@ function Restore-Release {
         Write-Host ""
 
         foreach ($releaseDir in $releaseDirs) {
-            $script:results.Processed++
-            $releaseName = Split-Path -Path $releaseDir -Leaf
+            $results.Processed++
+            # Get release name from directory, handling edge cases like root dirs or "."
+            $resolvedDir = [System.IO.Path]::GetFullPath($releaseDir)
+            $releaseName = [System.IO.Path]::GetFileName($resolvedDir)
+            if ([string]::IsNullOrEmpty($releaseName)) {
+                # Root directory - use drive letter or path
+                $releaseName = $resolvedDir.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+            }
 
             Write-Host "-----------------------------------------------------------" -ForegroundColor DarkGray
             Write-Host "Processing: $releaseName" -ForegroundColor Cyan
@@ -160,8 +166,8 @@ function Restore-Release {
                     }
                     else {
                         Write-Host "  [SKIP] Download (WhatIf)" -ForegroundColor Gray
-                        $script:results.Skipped++
-                        $script:results.Details.Add([PSCustomObject]@{
+                        $results.Skipped++
+                        $results.Details.Add([PSCustomObject]@{
                             Release = $releaseName
                             Status  = 'Skipped'
                             Reason  = 'WhatIf mode'
@@ -186,8 +192,8 @@ function Restore-Release {
 
                     Invoke-SrrRestore @restoreParams
 
-                    $script:results.Succeeded++
-                    $script:results.Details.Add([PSCustomObject]@{
+                    $results.Succeeded++
+                    $results.Details.Add([PSCustomObject]@{
                         Release = $releaseName
                         Status  = 'Succeeded'
                         Reason  = $null
@@ -195,8 +201,8 @@ function Restore-Release {
                 }
                 else {
                     Write-Host "  [SKIP] Restoration (WhatIf)" -ForegroundColor Gray
-                    $script:results.Skipped++
-                    $script:results.Details.Add([PSCustomObject]@{
+                    $results.Skipped++
+                    $results.Details.Add([PSCustomObject]@{
                         Release = $releaseName
                         Status  = 'Skipped'
                         Reason  = 'WhatIf mode'
@@ -205,8 +211,8 @@ function Restore-Release {
             }
             catch {
                 Write-Host "  [X] Failed: $($_.Exception.Message)" -ForegroundColor Red
-                $script:results.Failed++
-                $script:results.Details.Add([PSCustomObject]@{
+                $results.Failed++
+                $results.Details.Add([PSCustomObject]@{
                     Release = $releaseName
                     Status  = 'Failed'
                     Reason  = $_.Exception.Message
@@ -227,15 +233,15 @@ function Restore-Release {
         Write-Host "                      Summary" -ForegroundColor Cyan
         Write-Host "===========================================================" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "  Processed: $($script:results.Processed)" -ForegroundColor Gray
-        Write-Host "  Succeeded: $($script:results.Succeeded)" -ForegroundColor Green
-        Write-Host "  Failed:    $($script:results.Failed)" -ForegroundColor $(if ($script:results.Failed -gt 0) { 'Red' } else { 'Gray' })
-        Write-Host "  Skipped:   $($script:results.Skipped)" -ForegroundColor $(if ($script:results.Skipped -gt 0) { 'Yellow' } else { 'Gray' })
+        Write-Host "  Processed: $($results.Processed)" -ForegroundColor Gray
+        Write-Host "  Succeeded: $($results.Succeeded)" -ForegroundColor Green
+        Write-Host "  Failed:    $($results.Failed)" -ForegroundColor $(if ($results.Failed -gt 0) { 'Red' } else { 'Gray' })
+        Write-Host "  Skipped:   $($results.Skipped)" -ForegroundColor $(if ($results.Skipped -gt 0) { 'Yellow' } else { 'Gray' })
         Write-Host ""
 
-        if ($script:results.Failed -gt 0 -or $script:results.Skipped -gt 0) {
+        if ($results.Failed -gt 0 -or $results.Skipped -gt 0) {
             Write-Host "Details:" -ForegroundColor Gray
-            foreach ($detail in $script:results.Details | Where-Object { $_.Status -ne 'Succeeded' }) {
+            foreach ($detail in $results.Details | Where-Object { $_.Status -ne 'Succeeded' }) {
                 $color = if ($detail.Status -eq 'Failed') { 'Red' } else { 'Yellow' }
                 Write-Host "  - $($detail.Release): $($detail.Status) - $($detail.Reason)" -ForegroundColor $color
             }
@@ -244,11 +250,11 @@ function Restore-Release {
 
         # Return results object for pipeline usage
         [PSCustomObject]@{
-            Processed = $script:results.Processed
-            Succeeded = $script:results.Succeeded
-            Failed    = $script:results.Failed
-            Skipped   = $script:results.Skipped
-            Details   = $script:results.Details
+            Processed = $results.Processed
+            Succeeded = $results.Succeeded
+            Failed    = $results.Failed
+            Skipped   = $results.Skipped
+            Details   = $results.Details
         }
     }
 }
