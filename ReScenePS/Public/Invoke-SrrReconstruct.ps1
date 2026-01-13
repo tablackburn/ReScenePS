@@ -75,6 +75,18 @@ function Invoke-SrrReconstruct {
                     if ($block -is [SrrStoredFileBlock]) {
                         $relativePath = $block.FileName.TrimStart([char]92, [char]47)
                         $targetPath = Join-Path $OutputPath $relativePath
+
+                        # Prevent path traversal attacks (e.g., "..\..\file.txt")
+                        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
+                        $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+                        # Check path is within OutputPath (handle edge case where path could match prefix of sibling directory)
+                        $isWithinOutput = $resolvedPath -eq $resolvedOutputPath -or
+                            $resolvedPath.StartsWith($resolvedOutputPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+                        if (-not $isWithinOutput) {
+                            throw "Path traversal detected in stored file: $($block.FileName)"
+                        }
+                        $targetPath = $resolvedPath
+
                         $targetDir = Split-Path $targetPath -Parent
                         if ($targetDir -and -not (Test-Path $targetDir)) {
                             [System.IO.Directory]::CreateDirectory($targetDir) | Out-Null
@@ -116,7 +128,27 @@ function Invoke-SrrReconstruct {
     $sourceFileOffset = [long]0
 
     try {
-        $sortedVolumes = $rarVolumes.Keys | Sort-Object { if ($_ -match '\.rar$') { 0 } elseif ($_ -match '\.r(\d+)$') { [int]$matches[1] + 1 } else { 999 } }
+        # Sort volumes by volume number:
+        # - Old naming: .part01.rar, .part02.rar, ... (partXX determines order)
+        # - New naming: .rar (first), then .r00, .r01, ... (extension determines order)
+        $sortedVolumes = $rarVolumes.Keys | Sort-Object {
+            if ($_ -match '\.part(\d+)\.rar$') {
+                # Old naming: .part01.rar = 1, .part02.rar = 2, etc.
+                [int]$matches[1]
+            }
+            elseif ($_ -match '\.rar$') {
+                # New naming: .rar = 0 (first volume)
+                # Only reaches here if .partXX.rar didn't match above
+                0
+            }
+            elseif ($_ -match '\.r(\d+)$') {
+                # New naming: .r00 = 1, .r01 = 2, etc.
+                [int]$matches[1] + 1
+            }
+            else {
+                999
+            }
+        }
         foreach ($volumeName in $sortedVolumes) {
             $volumeData = $rarVolumes[$volumeName]
             $outputFile = Join-Path $OutputPath $volumeName

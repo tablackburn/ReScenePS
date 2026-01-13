@@ -81,19 +81,20 @@
     #
     # Source files can come from:
     # 1. NetworkPath - local network share (existing behavior)
-    # 2. PlexSourceMappings - Plex server (new, requires PlexDataSource config)
+    # 2. Plex playlist - auto-discovered by matching file paths to release names
     # ==========================================================================
     SrrReconstructionTests = @(
         # ------------------------------------------------------------------
         # PUBLIC DOMAIN EXAMPLES - Use with Plex source
         # These use films in the public domain for copyright-free testing
+        # Add these to your 'ReScenePS-TestData' playlist in Plex
         # ------------------------------------------------------------------
         # @{
         #     ReleaseName      = 'Night.Of.The.Living.Dead.1968.1080p.Bluray.x264-hV'
         #     SrrPath          = 'tests\samples\Night.Of.The.Living.Dead.1968.1080p.Bluray.x264-hV.srr'
         #     RelativeTo       = 'ProjectRoot'
         #     ReleaseType      = 'Movie-1080p-x264-PublicDomain'
-        #     # No NetworkPath - uses Plex source via PlexSourceMappings
+        #     # No NetworkPath - auto-discovered from Plex playlist
         # }
         # @{
         #     ReleaseName      = 'Metropolis.1927.1080p.BluRay.x264-AVCHD'
@@ -166,87 +167,23 @@
     # 1. Install PlexAutomationToolkit: Install-Module PlexAutomationToolkit
     # 2. Connect to your Plex account: Connect-PatAccount
     # 3. Add your server: Add-PatServer -ServerName 'MyPlex' -Default
-    # 4. Run Initialize-PlexTestCollection.ps1 to create the collection
-    # 5. Copy the generated PlexSourceMappings below
+    # 4. Create a playlist named 'ReScenePS-TestData' and add test media to it
+    # 5. Ensure media files are stored in paths containing the release name
+    #    (e.g., .../24.S01E01.DVDRip.XViD.INTERNAL-iMAGiNE/24.s01e01.avi)
     #
     # Or for CI/CD, set environment variables:
     #   PAT_SERVER_URI = 'https://your-plex-server:32400'
     #   PAT_TOKEN = 'your-plex-token'
+    #
+    # Privacy: Playlists are user-specific and not visible to other Plex users.
+    # Source files are downloaded fresh each run and cleaned up after tests.
     # ==========================================================================
     PlexDataSource = @{
         # Set to $true to enable Plex-sourced tests
         Enabled = $false
 
-        # Name of the Plex collection containing test releases
-        # Create with: .\tests\Initialize-PlexTestCollection.ps1
-        CollectionName = 'ReScenePS-TestData'
-
-        # Plex library to search (Movies, TV Shows, etc.)
-        LibraryName = 'Movies'
-
-        # Local cache directory for downloaded files
-        # If not specified, uses $env:TEMP/ReScenePS-PlexCache
-        CachePath = $null
-
-        # Cache TTL in hours (0 = always redownload, -1 = never expire)
-        # Default: 168 (1 week)
-        CacheTtlHours = 168
-    }
-
-    # ==========================================================================
-    # PLEX SOURCE MAPPINGS
-    # Maps SRR files to Plex library items for reconstruction tests
-    #
-    # Run Initialize-PlexTestCollection.ps1 to auto-generate these mappings
-    # based on your Plex library contents and SRR sample files.
-    #
-    # Key = SRR filename (matches files in tests/samples/)
-    # Value = Search criteria to find the item in Plex
-    #   - RatingKey: Direct Plex item ID (fastest, most reliable)
-    #   - Title: Movie/show title for search
-    #   - Year: Release year (for movies)
-    #   - ShowTitle, Season, Episode: For TV episodes
-    # ==========================================================================
-    PlexSourceMappings = @{
-        # ------------------------------------------------------------------
-        # PUBLIC DOMAIN FILM MAPPINGS
-        # Update RatingKey values to match your Plex library
-        # Find RatingKey by running: Get-PatLibraryItem -SectionName 'Movies' |
-        #   Where-Object { $_.title -like '*Night*Living*' } | Select ratingKey, title
-        # ------------------------------------------------------------------
-        # 'Night.Of.The.Living.Dead.1968.1080p.Bluray.x264-hV.srr' = @{
-        #     RatingKey = 5503      # Update with your Plex ratingKey
-        #     Title     = 'Night of the Living Dead'
-        #     Year      = 1968
-        # }
-        # 'Metropolis.1927.1080p.BluRay.x264-AVCHD.srr' = @{
-        #     RatingKey = 455999    # Update with your Plex ratingKey
-        #     Title     = 'Metropolis'
-        #     Year      = 1927
-        # }
-        # 'Sherlock.Jr.1924.1080p.BluRay.x264-PSYCHD.srr' = @{
-        #     RatingKey = 484800    # Update with your Plex ratingKey
-        #     Title     = 'Sherlock Jr.'
-        #     Year      = 1924
-        # }
-        # 'Battleship.Potemkin.1925.1080p.BluRay.x264-CiNEFiLE.srr' = @{
-        #     RatingKey = 527908    # Update with your Plex ratingKey
-        #     Title     = 'Battleship Potemkin'
-        #     Year      = 1925
-        # }
-        # 'The.Kid.1921.1080p.BluRay.x264-AVCHD.srr' = @{
-        #     RatingKey = 458863    # Update with your Plex ratingKey
-        #     Title     = 'The Kid'
-        #     Year      = 1921
-        # }
-
-        # ------------------------------------------------------------------
-        # CUSTOM MAPPINGS - add your own
-        # ------------------------------------------------------------------
-        # 'Your.Release.Name.srr' = @{
-        #     RatingKey = 12345
-        #     Title     = 'Movie Title'
-        #     Year      = 2020
-        # }
+        # Name of the Plex playlist containing test releases
+        # Items are auto-discovered by matching file paths to release names
+        PlaylistName = 'ReScenePS-TestData'
     }
 }

@@ -12,7 +12,7 @@
 RootModule = 'ReScenePS.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.2.2'
+ModuleVersion = '0.2.3'
 
 # Supported PSEditions
 CompatiblePSEditions = @('Core')
@@ -51,7 +51,12 @@ PowerShellVersion = '7.0'
 # ProcessorArchitecture = ''
 
 # Modules that must be imported into the global environment prior to importing this module
-RequiredModules = @()
+RequiredModules = @(
+    @{
+        ModuleName    = 'SrrDBAutomationToolkit'
+        ModuleVersion = '0.4.0'
+    }
+)
 
 # Assemblies that must be loaded prior to importing this module
 RequiredAssemblies = @()
@@ -74,6 +79,7 @@ FunctionsToExport = @(
     'Show-SrrInfo'
     'Invoke-SrrReconstruct'
     'Invoke-SrrRestore'
+    'Restore-Release'
     'ConvertFrom-SrsFileMetadata'
     'Export-SampleTrackData'
     'Restore-SrsVideo'

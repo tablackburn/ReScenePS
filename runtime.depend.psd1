@@ -7,5 +7,7 @@
             Repository = 'PSGallery'
         }
     }
-    # No external runtime dependencies - all CRC32 functionality is now built-in
+    'SrrDBAutomationToolkit' = @{
+        Version = '0.4.0'
+    }
 }

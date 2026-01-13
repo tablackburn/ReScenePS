@@ -68,9 +68,8 @@ function Invoke-SrrRestore {
     Write-Host "===========================================================" -ForegroundColor Cyan
     Write-Host ""
 
-    # Track files we create for potential cleanup
-    $script:createdFiles = @()
-    $script:validationPassed = $false
+    # Track validation status for cleanup decisions
+    $validationPassed = $false
 
     try {
         # Step 1: Auto-detect or validate SRR file
@@ -96,8 +95,13 @@ function Invoke-SrrRestore {
             }
         }
         else {
-            # Resolve provided path
-            $SrrFile = (Resolve-Path -Path $SrrFile -ErrorAction Stop).Path
+            # Resolve provided path with clear error message
+            try {
+                $SrrFile = (Resolve-Path -Path $SrrFile -ErrorAction Stop).Path
+            }
+            catch {
+                throw "SRR file not found: $SrrFile - $($_.Exception.Message)"
+            }
             Write-Host "  [OK] Using: $(Split-Path $SrrFile -Leaf)" -ForegroundColor Green
         }
 
@@ -193,6 +197,18 @@ function Invoke-SrrRestore {
                         # Guard against rooted paths and preserve relative names
                         $relativePath = $block.FileName.TrimStart('\', '/')
                         $targetPath = Join-Path $OutputPath $relativePath
+
+                        # Prevent path traversal attacks (e.g., "..\..\file.txt")
+                        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
+                        $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+                        # Check path is within OutputPath (handle edge case where path could match prefix of sibling directory)
+                        $isWithinOutput = $resolvedPath -eq $resolvedOutputPath -or
+                            $resolvedPath.StartsWith($resolvedOutputPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+                        if (-not $isWithinOutput) {
+                            throw "Path traversal detected in stored file: $($block.FileName)"
+                        }
+                        $targetPath = $resolvedPath
+
                         $targetDir = Split-Path $targetPath -Parent
 
                         if ($targetDir -and -not (Test-Path $targetDir)) {
@@ -205,7 +221,6 @@ function Invoke-SrrRestore {
                         $fileData = $br.ReadBytes([int]$block.FileSize)
                         if ($PSCmdlet.ShouldProcess($targetPath, "Write stored file")) {
                             [System.IO.File]::WriteAllBytes($targetPath, $fileData)
-                            $script:createdFiles += $targetPath
                             if ($targetPath.ToLower().EndsWith('.srs')) {
                                 $info = Get-SrsInfo -FilePath $targetPath
                                 Write-Host ("  [OK] Extracted SRS: {0} [{1}]" -f $block.FileName, $info.Type) -ForegroundColor Green
@@ -244,11 +259,7 @@ function Invoke-SrrRestore {
                     $sourcePath = $sourceFiles.Values | Select-Object -First 1 | Select-Object -ExpandProperty Path
 
                     if ($sourcePath -and (Test-Path $sourcePath)) {
-                        $reconstructed = Restore-SrsVideo -SrsFilePath $srsPath -SourceMkvPath $sourcePath -OutputMkvPath $sampleBaseName
-
-                        if ($reconstructed) {
-                            $script:createdFiles += $sampleBaseName
-                        }
+                        Restore-SrsVideo -SrsFilePath $srsPath -SourceMkvPath $sourcePath -OutputMkvPath $sampleBaseName | Out-Null
                     }
                     else {
                         Write-Warning "  Source file not available for SRS reconstruction"
@@ -286,10 +297,23 @@ function Invoke-SrrRestore {
 
         Write-Host "  RAR volumes to reconstruct: $($rarVolumes.Count)" -ForegroundColor Gray
 
-        # Sort volumes: .rar first, then .r00, .r01, etc
+        # Sort volumes by volume number:
+        # - Old naming: .part01.rar, .part02.rar, ... (partXX determines order)
+        # - New naming: .rar (first), then .r00, .r01, ... (extension determines order)
         $sortedVolumes = $rarVolumes.Keys | Sort-Object {
-            if ($_ -match '\.rar$') { 0 }
-            elseif ($_ -match '\.r(\d+)$') { [int]$matches[1] + 1 }
+            if ($_ -match '\.part(\d+)\.rar$') {
+                # Old naming: .part01.rar = 1, .part02.rar = 2, etc.
+                [int]$matches[1]
+            }
+            elseif ($_ -match '\.rar$') {
+                # New naming: .rar = 0 (first volume)
+                # Only reaches here if .partXX.rar didn't match above
+                0
+            }
+            elseif ($_ -match '\.r(\d+)$') {
+                # New naming: .r00 = 1, .r01 = 2, etc.
+                [int]$matches[1] + 1
+            }
             else { 999 }
         }
 
@@ -386,7 +410,6 @@ function Invoke-SrrRestore {
                     $rarStream.Close()
                 }
 
-                $script:createdFiles += $outputFile
                 $fileSize = (Get-Item $outputFile).Length
                 Write-Host "  [OK] Created: $volumeName ($fileSize bytes)" -ForegroundColor Green
             }
@@ -405,11 +428,11 @@ function Invoke-SrrRestore {
         # Respect -WhatIf: skip validation to avoid temp file writes, but allow cleanup preview
         if ($WhatIfPreference) {
             Write-Host "  Skipping validation under -WhatIf (no temp files written)" -ForegroundColor Gray
-            $script:validationPassed = $true
+            $validationPassed = $true
         }
         elseif ($SkipValidation) {
             Write-Host "  Skipping validation (-SkipValidation specified)" -ForegroundColor Yellow
-            $script:validationPassed = $true
+            $validationPassed = $true
         }
         else {
             # Extract and parse SFV
@@ -488,7 +511,7 @@ function Invoke-SrrRestore {
                         throw "Validation failed! $validCount valid, $failCount failed. Files not cleaned up for inspection."
                     }
 
-                    $script:validationPassed = $true
+                    $validationPassed = $true
                     Write-Host "  All $validCount RAR files validated successfully!" -ForegroundColor Green
                 }
             }
@@ -500,7 +523,7 @@ function Invoke-SrrRestore {
         Write-Host ""
 
         # Step 6: Cleanup (only if validation passed)
-            if ($script:validationPassed) {
+        if ($validationPassed) {
             Write-Host "[6/6] Cleanup..." -ForegroundColor Yellow
 
             # SRR deletion via ShouldProcess/-Confirm

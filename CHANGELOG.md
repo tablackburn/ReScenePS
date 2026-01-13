@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-01-11
+
+### Added
+
+- `Restore-Release` command for automated release restoration from SRR files
+- Integration with SrrDBAutomationToolkit for SRR file downloads
+- Documentation for Restore-Release command
+- High-performance CRC32 implementation using compiled C# via Add-Type
+
+### Changed
+
+- Renamed `requirements.psd1` to `runtime.depend.psd1` for clarity
+- Enhanced CI workflow with linting, caching, and branch filtering
+- Refactored test helpers and functional tests for better maintainability
+- Replaced pure PowerShell CRC32 with C# implementation (IEEE 802.3 polynomial)
+- CI test runtime reduced from 5+ hours to ~10 minutes
+
+### Fixed
+
+- Flaky performance tests: added warmup phases and increased thresholds for CI stability
+
+### Security
+
+- Added security policy (SECURITY.md)
+
 ## [0.2.2] - 2025-12-31
 
 ### Changed

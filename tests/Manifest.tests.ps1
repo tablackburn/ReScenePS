@@ -146,7 +146,7 @@ Describe 'Module manifest' {
             # This ensures we keep our dependant modules in sync between the manifest file and the requirements
             # script used to bootstrap and test.
             BeforeAll {
-                $requirementsPath = Join-Path -Path $Env:BHProjectPath -Child 'requirements.psd1'
+                $requirementsPath = Join-Path -Path $Env:BHProjectPath -Child 'runtime.depend.psd1'
                 $requirements = Import-PowerShellDataFile $requirementsPath
             }
 

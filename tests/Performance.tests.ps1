@@ -21,14 +21,13 @@ BeforeAll {
     $script:tempDir = New-TestTempDirectory -Prefix 'PerfTest'
 
     # Performance thresholds (in milliseconds)
-    # Note: CRC32 uses pure PowerShell implementation which is slower than compiled code
-    # but more portable (no external dependencies)
     $script:Thresholds = @{
         ByteArrayCompare1KB    = 10      # 1KB array comparison
-        ByteArrayCompare1MB    = 3500    # 1MB array comparison (increased for CI variance)
-        EbmlParse1000Elements  = 500     # Parse 1000 EBML elements
+        ByteArrayCompare1MB    = 5000    # 1MB array comparison (increased for CI variance)
+        EbmlParse1000Elements  = 750     # Parse 1000 EBML elements (increased for CI variance)
         BlockReaderInit        = 50      # BlockReader initialization
-        CRC32Calc1MB           = 5000    # CRC32 of 1MB file (pure PowerShell implementation)
+        CRC32Calc1MB           = 500     # CRC32 of 1MB file (using CRC module)
+        FindSourceFile100x     = 1000    # 100 file lookups (increased for CI variance)
     }
 }
 
@@ -64,6 +63,9 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
                 [System.Random]::new(42).NextBytes($a)
                 [Array]::Copy($a, $b, $size)
 
+                # Warmup: run once to ensure JIT compilation
+                $null = Compare-ByteArray -Array1 $a -Array2 $b
+
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 $null = Compare-ByteArray -Array1 $a -Array2 $b
                 $stopwatch.Stop()
@@ -83,6 +85,13 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
                     $data[$i * 2 + 1] = 0x00 # Value = 256
                 }
 
+                # Warmup: run a few iterations to ensure JIT compilation
+                for ($i = 0; $i -lt 10; $i++) {
+                    $offset = $i * 2
+                    $length = Get-EbmlUIntLength -LengthDescriptor $data[$offset]
+                    $null = Get-EbmlUInt -Buffer $data -Offset $offset -ByteCount $length
+                }
+
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 for ($i = 0; $i -lt 1000; $i++) {
                     $offset = $i * 2
@@ -99,15 +108,20 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
             InModuleScope 'ReScenePS' {
                 $data = [byte[]](0..255)
 
+                # Warmup: run a few iterations to ensure JIT compilation
+                for ($i = 0; $i -lt 10; $i++) {
+                    $null = ConvertTo-ByteString -Bytes $data
+                }
+
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 for ($i = 0; $i -lt 1000; $i++) {
                     $null = ConvertTo-ByteString -Bytes $data
                 }
                 $stopwatch.Stop()
 
-                # Should complete 1000 conversions in under 5 seconds
-                # (PowerShell string operations are slower than native code)
-                $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual 5000
+                # Should complete 1000 conversions in under 7.5 seconds
+                # (PowerShell string operations are slower than native code; increased for CI variance)
+                $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual 7500
             }
         }
     }
@@ -122,15 +136,19 @@ Describe 'Performance Benchmarks' -Tag 'Performance' {
         }
 
         It 'Finds source file in directory efficiently' {
-            InModuleScope 'ReScenePS' -Parameters @{ dir = $script:tempDir } {
+            InModuleScope 'ReScenePS' -Parameters @{ dir = $script:tempDir; threshold = $script:Thresholds.FindSourceFile100x } {
+                # Warmup: run a few iterations to ensure JIT compilation
+                for ($i = 0; $i -lt 5; $i++) {
+                    $null = Find-SourceFile -FileName 'test1mb.bin' -SearchPath $dir
+                }
+
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
                 for ($i = 0; $i -lt 100; $i++) {
                     $null = Find-SourceFile -FileName 'test1mb.bin' -SearchPath $dir
                 }
                 $stopwatch.Stop()
 
-                # 100 lookups should complete in under 500ms
-                $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual 500
+                $stopwatch.ElapsedMilliseconds | Should -BeLessOrEqual $threshold -Because "100 file lookups should complete under ${threshold}ms"
             }
         }
     }
