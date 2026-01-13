@@ -136,8 +136,9 @@ function Invoke-SrrReconstruct {
                 # Old naming: .part01.rar = 1, .part02.rar = 2, etc.
                 [int]$matches[1]
             }
-            elseif ($_ -match '(?<!\.part\d+)\.rar$') {
-                # New naming: .rar (not .partXX.rar) = 0 (first volume)
+            elseif ($_ -match '\.rar$') {
+                # New naming: .rar = 0 (first volume)
+                # Only reaches here if .partXX.rar didn't match above
                 0
             }
             elseif ($_ -match '\.r(\d+)$') {
