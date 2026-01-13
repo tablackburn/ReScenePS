@@ -68,6 +68,13 @@ function Restore-Release {
         [switch]$Recurse,
 
         [Parameter()]
+        [ValidateScript({
+            if ([string]::IsNullOrWhiteSpace($_)) { return $true }
+            if (-not (Test-Path -Path $_ -PathType Container)) {
+                throw "SourcePath directory does not exist: $_"
+            }
+            $true
+        })]
         [string]$SourcePath,
 
         [Parameter()]

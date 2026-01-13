@@ -79,7 +79,10 @@ function Invoke-SrrReconstruct {
                         # Prevent path traversal attacks (e.g., "..\..\file.txt")
                         $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
                         $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
-                        if (-not $resolvedPath.StartsWith($resolvedOutputPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        # Check path is within OutputPath (handle edge case where path could match prefix of sibling directory)
+                        $isWithinOutput = $resolvedPath -eq $resolvedOutputPath -or
+                            $resolvedPath.StartsWith($resolvedOutputPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+                        if (-not $isWithinOutput) {
                             throw "Path traversal detected in stored file: $($block.FileName)"
                         }
                         $targetPath = $resolvedPath
