@@ -834,10 +834,5 @@ Describe 'Invoke-SrrRestore' {
             Test-Path $evilFile | Should -BeFalse
         }
 
-        It 'Allows legitimate subdirectory paths' {
-            # This test verifies that legitimate paths like "Sample\file.txt" still work
-            # The "Stored file with subdirectory path" context already covers this
-            $true | Should -BeTrue
-        }
     }
 }
