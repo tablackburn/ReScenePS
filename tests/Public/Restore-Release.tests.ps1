@@ -314,9 +314,60 @@ Describe 'Restore-Release' {
     }
 
     Context 'Summary output' {
-        It 'Displays summary after processing' {
-            $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'Summary'
+        BeforeAll {
+            $script:summaryTestDir = Join-Path $script:tempDir 'summary-output-test'
+            New-Item -Path $script:summaryTestDir -ItemType Directory -Force | Out-Null
+
+            # Create subdirectories that will fail for batch processing
+            $script:summaryFailDir = Join-Path $script:summaryTestDir 'RESCENEPS_SUMMARY_FAIL_TEST'
+            New-Item -Path $script:summaryFailDir -ItemType Directory -Force | Out-Null
+
+            # Create a directory with existing SRR for WhatIf skip test
+            $script:summarySkipDir = Join-Path $script:summaryTestDir 'RESCENEPS_SUMMARY_SKIP_TEST'
+            New-Item -Path $script:summarySkipDir -ItemType Directory -Force | Out-Null
+
+            # Create minimal SRR in skip dir
+            $srrPath = Join-Path $script:summarySkipDir 'test.srr'
+            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp')
+            $headerSize = 7 + 2 + $appName.Length
+            $ms = [System.IO.MemoryStream]::new()
+            $bw = [System.IO.BinaryWriter]::new($ms)
+            $bw.Write([uint16]0x6969)
+            $bw.Write([byte]0x69)
+            $bw.Write([uint16]0x0000)
+            $bw.Write([uint16]$headerSize)
+            $bw.Write([uint16]$appName.Length)
+            $bw.Write($appName)
+            $bw.Flush()
+            [System.IO.File]::WriteAllBytes($srrPath, $ms.ToArray())
+            $bw.Dispose()
+            $ms.Dispose()
+        }
+
+        It 'Displays details section when failures occur' {
+            # Run in Recurse mode with a failing directory to capture details output
+            $output = Restore-Release -Path $script:summaryTestDir -Recurse -ErrorAction SilentlyContinue 6>&1 2>&1
+            $outputText = $output -join "`n"
+
+            # Should show Details: section since there are failures
+            $outputText | Should -Match 'Details:'
+            $outputText | Should -Match 'Failed'
+        }
+
+        It 'Displays details section with Skipped status in WhatIf mode' {
+            # WhatIf with existing SRR should show Skipped status
+            $output = Restore-Release -Path $script:summarySkipDir -WhatIf 6>&1 2>&1
+            $outputText = $output -join "`n"
+
+            # Should show Details: section with Skipped entry
+            $outputText | Should -Match 'Details:'
+            $outputText | Should -Match 'Skipped'
+        }
+
+        AfterAll {
+            if ($script:summaryTestDir -and (Test-Path $script:summaryTestDir)) {
+                Remove-Item -Path $script:summaryTestDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
