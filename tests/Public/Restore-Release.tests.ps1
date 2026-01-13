@@ -33,7 +33,7 @@ Describe 'Restore-Release' {
             $cmd = Get-Command Restore-Release
             $param = $cmd.Parameters['Recurse']
             $param | Should -Not -BeNull
-            $param.SwitchParameter | Should -BeTrue
+            $param.ParameterType | Should -Be ([switch])
         }
 
         It 'Has SourcePath parameter' {
@@ -46,21 +46,21 @@ Describe 'Restore-Release' {
             $cmd = Get-Command Restore-Release
             $param = $cmd.Parameters['KeepSrr']
             $param | Should -Not -BeNull
-            $param.SwitchParameter | Should -BeTrue
+            $param.ParameterType | Should -Be ([switch])
         }
 
         It 'Has KeepSources switch parameter' {
             $cmd = Get-Command Restore-Release
             $param = $cmd.Parameters['KeepSources']
             $param | Should -Not -BeNull
-            $param.SwitchParameter | Should -BeTrue
+            $param.ParameterType | Should -Be ([switch])
         }
 
         It 'Has SkipValidation switch parameter' {
             $cmd = Get-Command Restore-Release
             $param = $cmd.Parameters['SkipValidation']
             $param | Should -Not -BeNull
-            $param.SwitchParameter | Should -BeTrue
+            $param.ParameterType | Should -Be ([switch])
         }
     }
 

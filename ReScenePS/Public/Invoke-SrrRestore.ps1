@@ -530,7 +530,7 @@ function Invoke-SrrRestore {
         Write-Host ""
 
         # Step 6: Cleanup (only if validation passed)
-            if ($validationPassed) {
+        if ($validationPassed) {
             Write-Host "[6/6] Cleanup..." -ForegroundColor Yellow
 
             # SRR deletion via ShouldProcess/-Confirm
