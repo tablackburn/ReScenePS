@@ -101,7 +101,7 @@ function Invoke-SrrRestore {
                 $SrrFile = (Resolve-Path -Path $SrrFile -ErrorAction Stop).Path
             }
             catch {
-                throw "SRR file not found: $SrrFile"
+                throw "SRR file not found: $SrrFile - $($_.Exception.Message)"
             }
             Write-Host "  [OK] Using: $(Split-Path $SrrFile -Leaf)" -ForegroundColor Green
         }

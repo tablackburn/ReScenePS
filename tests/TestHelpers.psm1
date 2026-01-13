@@ -230,16 +230,20 @@ function New-MinimalSrrFile {
     $headerSize = 7 + 2 + $appBytes.Length
     $ms = [System.IO.MemoryStream]::new()
     $bw = [System.IO.BinaryWriter]::new($ms)
-    $bw.Write([uint16]0x6969)
-    $bw.Write([byte]0x69)
-    $bw.Write([uint16]0x0000)
-    $bw.Write([uint16]$headerSize)
-    $bw.Write([uint16]$appBytes.Length)
-    $bw.Write($appBytes)
-    $bw.Flush()
-    [System.IO.File]::WriteAllBytes($Path, $ms.ToArray())
-    $bw.Dispose()
-    $ms.Dispose()
+    try {
+        $bw.Write([uint16]0x6969)
+        $bw.Write([byte]0x69)
+        $bw.Write([uint16]0x0000)
+        $bw.Write([uint16]$headerSize)
+        $bw.Write([uint16]$appBytes.Length)
+        $bw.Write($appBytes)
+        $bw.Flush()
+        [System.IO.File]::WriteAllBytes($Path, $ms.ToArray())
+    }
+    finally {
+        $bw.Dispose()
+        $ms.Dispose()
+    }
 }
 
 #endregion

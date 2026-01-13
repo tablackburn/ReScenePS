@@ -206,6 +206,61 @@ Describe 'Restore-Release' {
             $functionDef = (Get-Command Restore-Release).Definition
             $functionDef | Should -Match 'Get-SatReleaseFile.*-PassThru'
         }
+
+        It 'Throws helpful error when Get-SatReleaseFile returns null SrrFile' -Skip:(-not (Get-Module SrrDBAutomationToolkit -ListAvailable)) {
+            $testDir = Join-Path $script:tempDir 'null-srrfile-test'
+            New-Item -Path $testDir -ItemType Directory -Force | Out-Null
+
+            try {
+                InModuleScope ReScenePS -Parameters @{ testDir = $testDir } {
+                    param($testDir)
+
+                    Mock Get-SatReleaseFile {
+                        [PSCustomObject]@{
+                            SrrFile = $null
+                            AdditionalFiles = @()
+                        }
+                    }
+
+                    { Restore-Release -Path $testDir } | Should -Throw '*did not return an SRR file*'
+                }
+            }
+            finally {
+                Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'Handles null AdditionalFiles gracefully' -Skip:(-not (Get-Module SrrDBAutomationToolkit -ListAvailable)) {
+            $testDir = Join-Path $script:tempDir 'null-additionalfiles-test'
+            New-Item -Path $testDir -ItemType Directory -Force | Out-Null
+            $srrPath = Join-Path $testDir 'test.srr'
+
+            # Create minimal SRR file outside InModuleScope
+            New-MinimalSrrFile -Path $srrPath
+
+            try {
+                InModuleScope ReScenePS -Parameters @{ testDir = $testDir; srrPath = $srrPath } {
+                    param($testDir, $srrPath)
+
+                    Mock Get-SatReleaseFile {
+                        [PSCustomObject]@{
+                            SrrFile = [PSCustomObject]@{
+                                FullName = $srrPath
+                                Name = 'test.srr'
+                            }
+                            AdditionalFiles = $null  # null instead of empty array
+                        }
+                    }
+                    Mock Invoke-SrrRestore { }
+
+                    # Should not throw
+                    { Restore-Release -Path $testDir } | Should -Not -Throw
+                }
+            }
+            finally {
+                Remove-Item -Path $testDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     Context 'Invoke-SrrRestore integration' {

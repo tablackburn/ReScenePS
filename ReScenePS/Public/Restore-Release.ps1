@@ -157,7 +157,7 @@ function Restore-Release {
 
                     if ($PSCmdlet.ShouldProcess($releaseName, "Download release files from srrDB")) {
                         $downloadResult = Get-SatReleaseFile -ReleaseName $releaseName -OutPath $releaseDir -PassThru -ErrorAction Stop
-                        if (-not $downloadResult -or -not $downloadResult.SrrFile) {
+                        if (-not $downloadResult -or -not $downloadResult.SrrFile -or [string]::IsNullOrWhiteSpace($downloadResult.SrrFile.FullName)) {
                             throw "Get-SatReleaseFile did not return an SRR file for: $releaseName"
                         }
                         $srrPath = $downloadResult.SrrFile.FullName
