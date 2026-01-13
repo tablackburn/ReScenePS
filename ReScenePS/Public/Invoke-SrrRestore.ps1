@@ -69,8 +69,8 @@ function Invoke-SrrRestore {
     Write-Host ""
 
     # Track files we create for potential cleanup
-    $script:createdFiles = @()
-    $script:validationPassed = $false
+    $createdFiles = @()
+    $validationPassed = $false
 
     try {
         # Step 1: Auto-detect or validate SRR file
@@ -222,7 +222,7 @@ function Invoke-SrrRestore {
                         $fileData = $br.ReadBytes([int]$block.FileSize)
                         if ($PSCmdlet.ShouldProcess($targetPath, "Write stored file")) {
                             [System.IO.File]::WriteAllBytes($targetPath, $fileData)
-                            $script:createdFiles += $targetPath
+                            $createdFiles += $targetPath
                             if ($targetPath.ToLower().EndsWith('.srs')) {
                                 $info = Get-SrsInfo -FilePath $targetPath
                                 Write-Host ("  [OK] Extracted SRS: {0} [{1}]" -f $block.FileName, $info.Type) -ForegroundColor Green
@@ -264,7 +264,7 @@ function Invoke-SrrRestore {
                         $reconstructed = Restore-SrsVideo -SrsFilePath $srsPath -SourceMkvPath $sourcePath -OutputMkvPath $sampleBaseName
 
                         if ($reconstructed) {
-                            $script:createdFiles += $sampleBaseName
+                            $createdFiles += $sampleBaseName
                         }
                     }
                     else {
@@ -416,7 +416,7 @@ function Invoke-SrrRestore {
                     $rarStream.Close()
                 }
 
-                $script:createdFiles += $outputFile
+                $createdFiles += $outputFile
                 $fileSize = (Get-Item $outputFile).Length
                 Write-Host "  [OK] Created: $volumeName ($fileSize bytes)" -ForegroundColor Green
             }
@@ -435,11 +435,11 @@ function Invoke-SrrRestore {
         # Respect -WhatIf: skip validation to avoid temp file writes, but allow cleanup preview
         if ($WhatIfPreference) {
             Write-Host "  Skipping validation under -WhatIf (no temp files written)" -ForegroundColor Gray
-            $script:validationPassed = $true
+            $validationPassed = $true
         }
         elseif ($SkipValidation) {
             Write-Host "  Skipping validation (-SkipValidation specified)" -ForegroundColor Yellow
-            $script:validationPassed = $true
+            $validationPassed = $true
         }
         else {
             # Extract and parse SFV
@@ -518,7 +518,7 @@ function Invoke-SrrRestore {
                         throw "Validation failed! $validCount valid, $failCount failed. Files not cleaned up for inspection."
                     }
 
-                    $script:validationPassed = $true
+                    $validationPassed = $true
                     Write-Host "  All $validCount RAR files validated successfully!" -ForegroundColor Green
                 }
             }
@@ -530,7 +530,7 @@ function Invoke-SrrRestore {
         Write-Host ""
 
         # Step 6: Cleanup (only if validation passed)
-            if ($script:validationPassed) {
+            if ($validationPassed) {
             Write-Host "[6/6] Cleanup..." -ForegroundColor Yellow
 
             # SRR deletion via ShouldProcess/-Confirm

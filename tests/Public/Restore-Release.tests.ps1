@@ -148,24 +148,8 @@ Describe 'Restore-Release' {
             New-Item -Path $script:existingSrrDir -ItemType Directory -Force | Out-Null
 
             # Create a minimal SRR file
-            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp12345')
-            $headerSize = 7 + 2 + $appName.Length
-
             $script:existingSrrFile = Join-Path $script:existingSrrDir 'release.srr'
-            $ms = [System.IO.MemoryStream]::new()
-            $bw = [System.IO.BinaryWriter]::new($ms)
-
-            $bw.Write([uint16]0x6969)
-            $bw.Write([byte]0x69)
-            $bw.Write([uint16]0x0000)
-            $bw.Write([uint16]$headerSize)
-            $bw.Write([uint16]$appName.Length)
-            $bw.Write($appName)
-
-            $bw.Flush()
-            [System.IO.File]::WriteAllBytes($script:existingSrrFile, $ms.ToArray())
-            $bw.Dispose()
-            $ms.Dispose()
+            New-MinimalSrrFile -Path $script:existingSrrFile -AppName 'TestApp12345'
         }
 
         It 'Detects existing SRR file in release directory' {
@@ -380,20 +364,7 @@ Describe 'Restore-Release' {
 
             # Create minimal SRR in skip dir
             $srrPath = Join-Path $script:summarySkipDir 'test.srr'
-            $appName = [System.Text.Encoding]::UTF8.GetBytes('TestApp')
-            $headerSize = 7 + 2 + $appName.Length
-            $ms = [System.IO.MemoryStream]::new()
-            $bw = [System.IO.BinaryWriter]::new($ms)
-            $bw.Write([uint16]0x6969)
-            $bw.Write([byte]0x69)
-            $bw.Write([uint16]0x0000)
-            $bw.Write([uint16]$headerSize)
-            $bw.Write([uint16]$appName.Length)
-            $bw.Write($appName)
-            $bw.Flush()
-            [System.IO.File]::WriteAllBytes($srrPath, $ms.ToArray())
-            $bw.Dispose()
-            $ms.Dispose()
+            New-MinimalSrrFile -Path $srrPath
         }
 
         It 'Displays details section when failures occur' {

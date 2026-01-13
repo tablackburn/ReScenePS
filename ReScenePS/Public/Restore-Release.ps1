@@ -157,6 +157,9 @@ function Restore-Release {
 
                     if ($PSCmdlet.ShouldProcess($releaseName, "Download release files from srrDB")) {
                         $downloadResult = Get-SatReleaseFile -ReleaseName $releaseName -OutPath $releaseDir -PassThru -ErrorAction Stop
+                        if (-not $downloadResult -or -not $downloadResult.SrrFile) {
+                            throw "Get-SatReleaseFile did not return an SRR file for: $releaseName"
+                        }
                         $srrPath = $downloadResult.SrrFile.FullName
                         Write-Host "  [OK] Downloaded: $($downloadResult.SrrFile.Name)" -ForegroundColor Green
 

@@ -202,6 +202,46 @@ function Remove-TestTempDirectory {
     }
 }
 
+function New-MinimalSrrFile {
+    <#
+    .SYNOPSIS
+    Creates a minimal valid SRR file for testing purposes.
+
+    .PARAMETER Path
+    Path where the SRR file should be created.
+
+    .PARAMETER AppName
+    Application name to embed in the SRR header. Defaults to 'TestApp'.
+
+    .DESCRIPTION
+    Creates a minimal SRR file containing only the required header block.
+    This is sufficient for tests that need to verify SRR file detection
+    without requiring full SRR parsing or reconstruction.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [string]$AppName = 'TestApp'
+    )
+
+    $appBytes = [System.Text.Encoding]::UTF8.GetBytes($AppName)
+    $headerSize = 7 + 2 + $appBytes.Length
+    $ms = [System.IO.MemoryStream]::new()
+    $bw = [System.IO.BinaryWriter]::new($ms)
+    $bw.Write([uint16]0x6969)
+    $bw.Write([byte]0x69)
+    $bw.Write([uint16]0x0000)
+    $bw.Write([uint16]$headerSize)
+    $bw.Write([uint16]$appBytes.Length)
+    $bw.Write($appBytes)
+    $bw.Flush()
+    [System.IO.File]::WriteAllBytes($Path, $ms.ToArray())
+    $bw.Dispose()
+    $ms.Dispose()
+}
+
 #endregion
 
 #region Plex Data Source
@@ -414,6 +454,7 @@ Export-ModuleMember -Function @(
     'Invoke-UnrarExtract'
     'New-TestTempDirectory'
     'Remove-TestTempDirectory'
+    'New-MinimalSrrFile'
     # Plex data source functions
     'Test-PlexAvailable'
     'Initialize-PlexForCI'
