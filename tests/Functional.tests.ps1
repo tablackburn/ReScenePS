@@ -508,7 +508,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:(-not $script:plexEnabled) {
 
             # Use -SkipValidation because Plex source files won't have matching CRCs
             # (they're transcoded/different from the original scene release files)
-            Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -KeepSrr -KeepSources -SkipValidation -Confirm:$false
+            Invoke-SrrRestore -SrrFile $script:workSrrPath -SourcePath $script:sourceDir -OutputPath $outputDir -KeepSrr -SkipValidation -Confirm:$false
 
             $createdRars = Get-ChildItem -Path $outputDir -Filter '*.rar' -ErrorAction 'SilentlyContinue'
             $createdRars.Count | Should -BeGreaterThan 0
@@ -757,7 +757,7 @@ Describe 'Restore-Release - Integration' -Skip:(-not $script:plexEnabled -or -no
             }
 
             # Run full restore (with SkipValidation since Plex source may differ)
-            $result = Restore-Release -Path $script:fullReleaseDir -KeepSrr -KeepSources -SkipValidation -Confirm:$false
+            $result = Restore-Release -Path $script:fullReleaseDir -KeepSrr -SkipValidation -Confirm:$false
 
             $result.Succeeded | Should -Be 1
 
