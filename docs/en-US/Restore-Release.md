@@ -13,8 +13,9 @@ Scans directories for releases, downloads required files from srrDB, and rebuild
 ## SYNTAX
 
 ```
-Restore-Release [[-Path] <String>] [-Recurse] [-SourcePath <String>] [-KeepSrr] [-KeepSources]
- [-SkipValidation] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm] [<CommonParameters>]
+Restore-Release [[-Path] <String>] [-Recurse] [-Depth <Int32>] [-SourcePath <String>] [-KeepSrr]
+ [-DeleteSources] [-SkipValidation] [-ProgressAction <ActionPreference>] [-WhatIf] [-Confirm]
+ [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -22,7 +23,8 @@ This is the main automation command for ReScenePS.
 It performs:
 - Detection of release names from directory names
 - Querying srrDB for release metadata
-- Downloading SRR files and any additional files (proofs, etc.) not stored in the SRR
+- Downloading SRR files and any additional files from srrDB (proof images, samples, etc.
+  that are stored separately on srrDB rather than embedded in the SRR file)
 - Calling Invoke-SrrRestore to rebuild the release with original names and structure
 
 Requires the SrrDBAutomationToolkit module for srrDB API access.
@@ -52,18 +54,33 @@ Processes all subdirectories as separate releases.
 
 ### EXAMPLE 4
 ```
-Restore-Release -KeepSrr -KeepSources -WhatIf
+Restore-Release -KeepSrr -WhatIf
 ```
 
 Preview what would happen without making changes.
+
+### EXAMPLE 5
+```
+Restore-Release -DeleteSources
+```
+
+Restore and delete source files after successful restoration.
 
 ## PARAMETERS
 
 ### -Path
 Directory to scan for releases.
 Defaults to current directory.
-In single mode (default), treats this directory as the release.
-With -Recurse, treats each subdirectory as a separate release.
+
+In single mode (default), the function first checks if the specified directory
+contains rebuildable content (video files \>= 100MB or .srr files).
+If so, it
+processes that directory as a release.
+If not, it automatically scans immediate
+subdirectories for rebuildable releases.
+
+With -Recurse, treats each subdirectory as a separate release without checking
+if the parent directory itself is rebuildable.
 
 ```yaml
 Type: String
@@ -92,10 +109,29 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
+### -Depth
+Maximum depth to search for rebuildable releases when auto-detecting subdirectories.
+Only applies in single mode (without -Recurse) when the specified directory itself
+is not rebuildable.
+Defaults to 1 (immediate subdirectories only).
+Set to 0 to disable subdirectory scanning, or higher values to search deeper.
+
+```yaml
+Type: Int32
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: 1
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
 ### -SourcePath
-Directory containing source files for reconstruction.
-Defaults to the release directory.
-Can be set to a different location if source files are stored separately.
+Directory containing source files for reconstruction (e.g., .mkv files).
+Defaults to the release directory being processed.
+Use this when source files are stored in a different location than the release folder.
 
 ```yaml
 Type: String
@@ -124,8 +160,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -KeepSources
-Keep source files (e.g., .mkv) after successful restoration.
+### -DeleteSources
+Delete source files (e.g., .mkv) after successful restoration.
+By default, source files are kept.
 
 ```yaml
 Type: SwitchParameter
@@ -186,7 +223,7 @@ Accept wildcard characters: False
 ```
 
 ### -ProgressAction
-Specifies how the cmdlet responds to progress updates.
+{{ Fill ProgressAction Description }}
 
 ```yaml
 Type: ActionPreference

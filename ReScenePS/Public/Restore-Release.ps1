@@ -15,11 +15,23 @@ function Restore-Release {
 
     .PARAMETER Path
         Directory to scan for releases. Defaults to current directory.
-        In single mode (default), treats this directory as the release.
-        With -Recurse, treats each subdirectory as a separate release.
+
+        In single mode (default), the function first checks if the specified directory
+        contains rebuildable content (video files >= 100MB or .srr files). If so, it
+        processes that directory as a release. If not, it automatically scans immediate
+        subdirectories for rebuildable releases.
+
+        With -Recurse, treats each subdirectory as a separate release without checking
+        if the parent directory itself is rebuildable.
 
     .PARAMETER Recurse
         Process each subdirectory as a separate release instead of the root directory.
+
+    .PARAMETER Depth
+        Maximum depth to search for rebuildable releases when auto-detecting subdirectories.
+        Only applies in single mode (without -Recurse) when the specified directory itself
+        is not rebuildable. Defaults to 1 (immediate subdirectories only).
+        Set to 0 to disable subdirectory scanning, or higher values to search deeper.
 
     .PARAMETER SourcePath
         Directory containing source files for reconstruction (e.g., .mkv files).
@@ -29,8 +41,9 @@ function Restore-Release {
     .PARAMETER KeepSrr
         Keep the SRR file after successful restoration.
 
-    .PARAMETER KeepSources
-        Keep source files (e.g., .mkv) after successful restoration.
+    .PARAMETER DeleteSources
+        Delete source files (e.g., .mkv) after successful restoration.
+        By default, source files are kept.
 
     .PARAMETER SkipValidation
         Skip CRC validation against embedded SFV.
@@ -51,9 +64,14 @@ function Restore-Release {
         Processes all subdirectories as separate releases.
 
     .EXAMPLE
-        Restore-Release -KeepSrr -KeepSources -WhatIf
+        Restore-Release -KeepSrr -WhatIf
 
         Preview what would happen without making changes.
+
+    .EXAMPLE
+        Restore-Release -DeleteSources
+
+        Restore and delete source files after successful restoration.
     #>
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
@@ -70,6 +88,10 @@ function Restore-Release {
         [switch]$Recurse,
 
         [Parameter()]
+        [ValidateRange(0, 10)]
+        [int]$Depth = 1,
+
+        [Parameter()]
         [ValidateScript({
             if ([string]::IsNullOrWhiteSpace($_)) { return $true }
             if (-not (Test-Path -Path $_ -PathType Container)) {
@@ -83,7 +105,7 @@ function Restore-Release {
         [switch]$KeepSrr,
 
         [Parameter()]
-        [switch]$KeepSources,
+        [switch]$DeleteSources,
 
         [Parameter()]
         [switch]$SkipValidation
@@ -110,20 +132,36 @@ function Restore-Release {
         Write-Host "===========================================================" -ForegroundColor Cyan
         Write-Host ""
 
-        # Determine directories to process
-        $releaseDirs = @()
+        # Determine directories to process (use List for O(n) performance)
+        $releaseDirs = [System.Collections.Generic.List[string]]::new()
 
         if ($Recurse) {
-            $releaseDirs = Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName
+            # Recurse mode: process all subdirectories
+            $dirs = Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName
+            if ($dirs) { $releaseDirs.AddRange([string[]]$dirs) }
             Write-Host "Scanning for releases in: $Path" -ForegroundColor Yellow
             Write-Host "Found $($releaseDirs.Count) subdirectories to process" -ForegroundColor Gray
         }
         else {
-            $releaseDirs = @($Path)
+            # Single mode: check if current directory is rebuildable
+            $isRebuildable = try { Test-RebuildableDirectory -Path $Path } catch { $false }
+
+            if ($isRebuildable) {
+                $releaseDirs.Add($Path)
+            }
+            elseif ($Depth -gt 0) {
+                # Scan subdirectories for rebuildable content
+                Write-Host "Scanning for rebuildable releases in: $Path (depth: $Depth)" -ForegroundColor Yellow
+                $foundDirs = Get-RebuildableSubdirectory -Path $Path -Depth $Depth
+                if ($foundDirs) { $releaseDirs.AddRange([string[]]$foundDirs) }
+                if ($releaseDirs.Count -gt 0) {
+                    Write-Host "Found $($releaseDirs.Count) rebuildable release(s)" -ForegroundColor Gray
+                }
+            }
         }
 
         if ($releaseDirs.Count -eq 0) {
-            Write-Warning "No directories found to process"
+            Write-Warning "No rebuildable releases found. Ensure the directory contains video files (.mkv, .avi, .mp4) or .srr files."
             return
         }
 
@@ -192,7 +230,7 @@ function Restore-Release {
                     }
 
                     if ($KeepSrr) { $restoreParams['KeepSrr'] = $true }
-                    if ($KeepSources) { $restoreParams['KeepSources'] = $true }
+                    if ($DeleteSources) { $restoreParams['DeleteSources'] = $true }
                     if ($SkipValidation) { $restoreParams['SkipValidation'] = $true }
 
                     Invoke-SrrRestore @restoreParams
