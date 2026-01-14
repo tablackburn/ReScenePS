@@ -617,4 +617,68 @@ Describe 'Restore-Release' {
             }
         }
     }
+
+    Context 'Exception handling in rebuildable directory check' {
+        BeforeAll {
+            $script:exceptionTestDir = Join-Path $script:tempDir 'exception-test'
+            New-Item -Path $script:exceptionTestDir -ItemType Directory -Force | Out-Null
+        }
+
+        It 'Handles UnauthorizedAccessException gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.UnauthorizedAccessException]::new("Access denied to test directory")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'Access denied'
+            }
+        }
+
+        It 'Handles IOException gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.IO.IOException]::new("IO error reading directory")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'IO error'
+            }
+        }
+
+        It 'Handles generic exceptions gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.Exception]::new("Unexpected error")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'Error checking directory'
+            }
+        }
+
+        AfterAll {
+            if ($script:exceptionTestDir -and (Test-Path $script:exceptionTestDir)) {
+                Remove-Item -Path $script:exceptionTestDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }

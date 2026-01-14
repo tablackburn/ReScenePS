@@ -281,6 +281,33 @@ Describe 'Test-RebuildableDirectory' {
         }
     }
 
+    Context 'Error handling' {
+        It 'Returns false and writes verbose message when file enumeration fails' {
+            InModuleScope ReScenePS {
+                # Create a test directory
+                $errorDir = Join-Path $TestDrive 'error-test'
+                New-Item -Path $errorDir -ItemType Directory -Force | Out-Null
+
+                # Mock Get-ChildItem to throw for video file enumeration (the second call)
+                # First call is for SRR files, second is for video files
+                $script:callCount = 0
+                Mock Get-ChildItem {
+                    $script:callCount++
+                    if ($script:callCount -eq 1) {
+                        # First call: SRR check - return nothing
+                        return $null
+                    }
+                    # Second call: video file check - throw error
+                    throw [System.UnauthorizedAccessException]::new("Access denied")
+                }
+
+                # Should return false and not throw
+                $result = Test-RebuildableDirectory -Path $errorDir
+                $result | Should -Be $false
+            }
+        }
+    }
+
     Context 'Non-recursive behavior' {
         It 'Does not find video files in subdirectories' {
             $parentDir = Join-Path $script:tempDir 'parent-dir'
