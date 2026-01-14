@@ -133,15 +133,11 @@ Describe 'Get-RebuildableSubdirectory' {
             InModuleScope ReScenePS -Parameters @{ errorTestDir = $errorTestDir; rebuildableDir = $rebuildableDir; nonRebuildableDir = $nonRebuildableDir } {
                 param($errorTestDir, $rebuildableDir, $nonRebuildableDir)
 
-                # Mock Test-RebuildableDirectory to throw for the non-rebuildable dir
+                # Mock Test-RebuildableDirectory to throw only for the non-rebuildable dir
+                # Using -ParameterFilter allows other calls to fall through to the real function
                 Mock Test-RebuildableDirectory {
-                    param($Path)
-                    if ($Path -eq $nonRebuildableDir) {
-                        throw [System.UnauthorizedAccessException]::new("Access denied to $Path")
-                    }
-                    # Call the real function for other paths
-                    return & (Get-Command Test-RebuildableDirectory -CommandType Function) -Path $Path
-                } -Verifiable
+                    throw [System.UnauthorizedAccessException]::new("Access denied to $Path")
+                } -ParameterFilter { $Path -eq $nonRebuildableDir } -Verifiable
 
                 # Should continue processing and return the rebuildable dir, writing a warning
                 $warningOutput = $null

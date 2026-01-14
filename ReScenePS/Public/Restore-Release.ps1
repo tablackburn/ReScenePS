@@ -170,7 +170,7 @@ function Restore-Release {
         }
 
         if ($releaseDirs.Count -eq 0) {
-            Write-Warning "No rebuildable releases found. Ensure the directory contains video files (.mkv, .avi, .mp4) or .srr files."
+            Write-Warning "No rebuildable releases found. Ensure the directory contains video files (.mkv, .avi, .mp4, .m2ts) or .srr files."
             return
         }
 
