@@ -604,11 +604,17 @@ Describe 'Restore-Release' {
         It 'Depth parameter does not affect Recurse mode' {
             # In Recurse mode, all immediate subdirectories are processed regardless of Depth
             # (Depth only affects the auto-detect scanning in single mode)
-            # level1-not-rebuildable will be processed but fail (no SRR or video files)
-            $result = Restore-Release -Path $script:depthTestDir -Recurse -Depth 1 -ErrorAction SilentlyContinue 2>$null
+            # level1-container will be processed but fail (no SRR or video files)
+            $result = Restore-Release -Path $script:depthTestDir -Recurse -Depth 1
 
-            # Recurse mode processes all immediate subdirs (level1-rebuildable and level1-not-rebuildable)
+            # Recurse mode processes all immediate subdirs regardless of rebuildable status
+            # This includes Level1.Rebuildable.Release-TEST and Level1.Container
             $result.Processed | Should -Be 2
+
+            # Verify Depth parameter was ignored - if it wasn't, we'd only get 1 result
+            # because Level1.Container is not rebuildable and would be skipped in single mode
+            $result.Details.Release | Should -Contain 'Level1.Rebuildable.Release-TEST'
+            $result.Details.Release | Should -Contain 'Level1.Container'
         }
 
         AfterAll {
@@ -658,12 +664,12 @@ Describe 'Restore-Release' {
             }
         }
 
-        It 'Handles generic exceptions gracefully with warning' {
+        It 'Handles RuntimeException gracefully with warning' {
             InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
                 param($path)
 
                 Mock Test-RebuildableDirectory {
-                    throw [System.Exception]::new("Unexpected error")
+                    throw [System.Management.Automation.RuntimeException]::new("PowerShell runtime error")
                 }
 
                 # Should not throw, should write warning and return empty results

@@ -132,7 +132,7 @@ function Restore-Release {
         Write-Host "===========================================================" -ForegroundColor Cyan
         Write-Host ""
 
-        # Determine directories to process (use List for O(n) performance)
+        # Determine directories to process (use List for O(1) amortized Add vs array concatenation)
         $releaseDirs = [System.Collections.Generic.List[string]]::new()
 
         if ($Recurse) {
@@ -150,7 +150,9 @@ function Restore-Release {
             } catch [System.IO.IOException] {
                 Write-Warning "IO error checking directory '$Path': $($_.Exception.Message)"
                 $false
-            } catch {
+            } catch [System.Management.Automation.RuntimeException] {
+                # Catch PowerShell runtime errors (e.g., cmdlet failures) but allow critical
+                # exceptions like OutOfMemoryException and StackOverflowException to propagate
                 Write-Warning "Error checking directory '$Path': $($_.Exception.Message)"
                 $false
             }

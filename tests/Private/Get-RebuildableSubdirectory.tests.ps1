@@ -116,6 +116,34 @@ Describe 'Get-RebuildableSubdirectory' {
         }
     }
 
+    Context 'Path validation' {
+        It 'Returns empty array for non-existent path' {
+            $nonExistentPath = Join-Path $script:tempDir 'NonExistent_Path_12345'
+
+            InModuleScope ReScenePS -Parameters @{ path = $nonExistentPath } {
+                param($path)
+
+                $result = Get-RebuildableSubdirectory -Path $path -Depth 1 -WarningAction SilentlyContinue
+
+                $result | Should -HaveCount 0
+            }
+        }
+
+        It 'Writes warning for non-existent path' {
+            $nonExistentPath = Join-Path $script:tempDir 'NonExistent_Path_67890'
+
+            # Capture warning output using 3>&1 redirection
+            $output = InModuleScope ReScenePS -Parameters @{ path = $nonExistentPath } {
+                param($path)
+                Get-RebuildableSubdirectory -Path $path -Depth 1 3>&1
+            }
+
+            # Check if any output contains warning about non-existent path
+            $warningText = $output | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object { $_.Message }
+            $warningText | Should -Match 'does not exist'
+        }
+    }
+
     Context 'Error handling' {
         It 'Writes warning and continues when Test-RebuildableDirectory throws exception' {
             $errorTestDir = Join-Path $script:tempDir 'error-handling-test'

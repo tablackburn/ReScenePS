@@ -44,7 +44,9 @@ function Test-RebuildableDirectory {
 
     # Get video files directly in this directory (not recursive - we want to find release dirs, not drill down)
     # Use wildcard path with -Include for filesystem-level filtering (more efficient than Where-Object)
-    # Note: -Include requires wildcard in path to work without -Recurse
+    # Note: -Include requires wildcard in path to work without -Recurse. Using Join-Path with '*'
+    # ensures we only get direct children while benefiting from filesystem-level extension filtering.
+    # This approach is case-insensitive on Windows and prevents accidental recursion.
     try {
         $videoFiles = Get-ChildItem -Path (Join-Path $Path '*') -File -Include '*.mkv', '*.avi', '*.mp4', '*.m2ts' -ErrorAction Stop
     }

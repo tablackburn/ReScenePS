@@ -200,24 +200,12 @@ function Invoke-SrrRestore {
                         $targetPath = Join-Path $OutputPath $relativePath
 
                         # Prevent path traversal attacks (e.g., "..\..\file.txt")
-                        # Security: Malicious SRR files could contain stored file paths with ".." sequences
+                        # Malicious SRR files could contain stored file paths with ".." sequences
                         # that would write files outside the intended output directory.
-                        #
-                        # We validate by:
-                        # 1. Resolving the full path (normalizes ".." and "." sequences)
-                        # 2. Checking the resolved path starts with OutputPath + separator
-                        #
-                        # The separator suffix prevents a false positive where OutputPath="C:\Output"
-                        # and resolvedPath="C:\OutputMalicious\file.txt" would incorrectly pass a
-                        # simple StartsWith("C:\Output") check.
-                        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
-                        $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
-                        $isWithinOutput = $resolvedPath -eq $resolvedOutputPath -or
-                            $resolvedPath.StartsWith($resolvedOutputPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
-                        if (-not $isWithinOutput) {
+                        if (-not (Test-PathWithinDirectory -Path $targetPath -BaseDirectory $OutputPath)) {
                             throw "Path traversal detected in stored file: $($block.FileName)"
                         }
-                        $targetPath = $resolvedPath
+                        $targetPath = [System.IO.Path]::GetFullPath($targetPath)
 
                         $targetDir = Split-Path $targetPath -Parent
 

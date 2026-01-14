@@ -42,6 +42,12 @@ function Get-RebuildableSubdirectory {
 
     $rebuildableDirs = [System.Collections.Generic.List[string]]::new()
 
+    # Validate path exists before scanning
+    if (-not (Test-Path $Path -PathType Container)) {
+        Write-Warning "Path does not exist or is not a directory: $Path"
+        return $rebuildableDirs.ToArray()
+    }
+
     # Get subdirectories up to specified depth using Get-ChildItem's -Depth parameter.
     # Get-ChildItem -Depth is 0-indexed: -Depth 0 = immediate children only,
     # -Depth 1 = children + grandchildren. Our Depth parameter is 1-indexed:

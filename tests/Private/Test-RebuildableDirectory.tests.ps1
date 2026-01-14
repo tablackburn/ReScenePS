@@ -333,4 +333,26 @@ Describe 'Test-RebuildableDirectory' {
             }
         }
     }
+
+    Context 'Edge cases' {
+        It 'Handles directory with no matching files gracefully' {
+            # This tests the -Include filter behavior - a directory with files
+            # that don't match any of the video extensions should return false
+            $noMatchDir = Join-Path $script:tempDir 'no-match-files'
+            New-Item -Path $noMatchDir -ItemType Directory -Force | Out-Null
+
+            # Create large files with non-matching extensions
+            $txtPath = Join-Path $noMatchDir 'largefile.txt'
+            $fs = [System.IO.File]::Create($txtPath)
+            $fs.SetLength(200MB)
+            $fs.Close()
+
+            InModuleScope ReScenePS -Parameters @{ path = $noMatchDir } {
+                param($path)
+                Test-RebuildableDirectory -Path $path | Should -Be $false
+            }
+
+            Remove-Item -Path $noMatchDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
