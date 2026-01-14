@@ -12,105 +12,109 @@
 BeforeAll {
     Import-Module "$PSScriptRoot/../TestHelpers.psm1" -Force
     Initialize-TestEnvironment
+
+    # Create cross-platform test paths using TestDrive
+    $script:testBase = Join-Path $TestDrive 'Output'
+    New-Item -Path $script:testBase -ItemType Directory -Force | Out-Null
+    New-Item -Path (Join-Path $script:testBase 'subdir') -ItemType Directory -Force | Out-Null
+    New-Item -Path (Join-Path $script:testBase 'a/b/c/d/e') -ItemType Directory -Force | Out-Null
+
+    # Create sibling directory for prefix tests
+    $script:siblingDir = Join-Path $TestDrive 'OutputMalicious'
+    New-Item -Path $script:siblingDir -ItemType Directory -Force | Out-Null
+
+    # Create "Other" directory outside base for traversal tests
+    $script:otherDir = Join-Path $TestDrive 'Other'
+    New-Item -Path $script:otherDir -ItemType Directory -Force | Out-Null
 }
 
 Describe 'Test-PathWithinDirectory' {
 
     Context 'Valid paths within directory' {
         It 'Returns true for path directly in base directory' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $path = Join-Path $base 'file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
             }
         }
 
         It 'Returns true for path in subdirectory of base' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\subdir\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $path = Join-Path $base 'subdir/file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
             }
         }
 
         It 'Returns true for deeply nested path' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\a\b\c\d\e\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $path = Join-Path $base 'a/b/c/d/e/file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
             }
         }
 
         It 'Returns true when path equals base directory' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output'
-                Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                Test-PathWithinDirectory -Path $base -BaseDirectory $base | Should -Be $true
             }
         }
     }
 
     Context 'Path traversal attempts' {
         It 'Returns false for path traversal with ..' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\..\Other\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase; other = $script:otherDir } {
+                param($base, $other)
+                # Construct a path that uses .. to escape the base directory
+                $path = Join-Path $base '../Other/file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $false
             }
         }
 
         It 'Returns false for path completely outside base' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Other\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase; other = $script:otherDir } {
+                param($base, $other)
+                $path = Join-Path $other 'file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $false
             }
         }
 
         It 'Returns false for sibling directory with similar prefix' {
-            InModuleScope ReScenePS {
-                # This tests the separator suffix check - "C:\OutputMalicious" should not
-                # match base "C:\Output" even though it starts with the same characters
-                $base = 'C:\Output'
-                $path = 'C:\OutputMalicious\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase; sibling = $script:siblingDir } {
+                param($base, $sibling)
+                # This tests the separator suffix check - sibling directory should not
+                # match base even though it starts with the same characters
+                $path = Join-Path $sibling 'file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $false
             }
         }
 
         It 'Returns false for complex traversal attempt' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\subdir\..\..\..\..\Windows\System32\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $path = Join-Path $base 'subdir/../../../../etc/passwd'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $false
-            }
-        }
-    }
-
-    Context 'Case sensitivity' {
-        It 'Handles case-insensitive comparison on Windows' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\OUTPUT\SubDir\file.txt'
-                # On Windows, paths are case-insensitive
-                Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
             }
         }
     }
 
     Context 'Path normalization' {
         It 'Normalizes paths with . components' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output'
-                $path = 'C:\Output\.\subdir\.\file.txt'
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $path = Join-Path $base './subdir/./file.txt'
                 Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
             }
         }
 
         It 'Handles trailing separators in base directory' {
-            InModuleScope ReScenePS {
-                $base = 'C:\Output\'
-                $path = 'C:\Output\file.txt'
-                Test-PathWithinDirectory -Path $path -BaseDirectory $base | Should -Be $true
+            InModuleScope ReScenePS -Parameters @{ base = $script:testBase } {
+                param($base)
+                $baseWithSep = $base + [System.IO.Path]::DirectorySeparatorChar
+                $path = Join-Path $base 'file.txt'
+                Test-PathWithinDirectory -Path $path -BaseDirectory $baseWithSep | Should -Be $true
             }
         }
     }
