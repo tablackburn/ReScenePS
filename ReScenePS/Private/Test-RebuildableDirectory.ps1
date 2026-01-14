@@ -42,14 +42,11 @@ function Test-RebuildableDirectory {
         return $true
     }
 
-    # Video file extensions we can rebuild from
-    $videoExtensions = @('.mkv', '.avi', '.mp4', '.m2ts')
-
     # Get video files directly in this directory (not recursive - we want to find release dirs, not drill down)
+    # Use wildcard path with -Include for filesystem-level filtering (more efficient than Where-Object)
+    # Note: -Include requires wildcard in path to work without -Recurse
     try {
-        $videoFiles = Get-ChildItem -Path $Path -File -ErrorAction Stop | Where-Object {
-            $_.Extension.ToLowerInvariant() -in $videoExtensions
-        }
+        $videoFiles = Get-ChildItem -Path (Join-Path $Path '*') -File -Include '*.mkv', '*.avi', '*.mp4', '*.m2ts' -ErrorAction Stop
     }
     catch {
         # Handle access denied or other errors gracefully

@@ -514,6 +514,41 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:(-not $script:plexEnabled) {
             $createdRars.Count | Should -BeGreaterThan 0
         }
 
+        It 'DeleteSources parameter removes source files after restore' {
+            if (-not $script:setupSuccessful) {
+                Set-ItResult -Skipped -Because 'Setup failed'
+                return
+            }
+
+            # Create a separate test directory for DeleteSources test
+            $deleteSourcesDir = Join-Path -Path $script:testWorkDir -ChildPath 'delete-sources-test'
+            $deleteSourcesSource = Join-Path -Path $deleteSourcesDir -ChildPath 'source'
+            $deleteSourcesOutput = Join-Path -Path $deleteSourcesDir -ChildPath 'output'
+            New-Item -Path $deleteSourcesSource -ItemType Directory -Force | Out-Null
+            New-Item -Path $deleteSourcesOutput -ItemType Directory -Force | Out-Null
+
+            # Copy SRR and source file
+            Copy-Item -Path $script:workSrrPath -Destination $deleteSourcesOutput
+            $sourceFiles = Get-ChildItem -Path $script:sourceDir -File
+            foreach ($file in $sourceFiles) {
+                Copy-Item -Path $file.FullName -Destination $deleteSourcesSource
+            }
+
+            # Get the source file path for verification
+            $testSourceFile = Get-ChildItem -Path $deleteSourcesSource -File | Select-Object -First 1
+            $testSourceFile | Should -Not -BeNull
+
+            # Run restore with DeleteSources
+            $srrInOutput = Get-ChildItem -Path $deleteSourcesOutput -Filter '*.srr' | Select-Object -First 1
+            Invoke-SrrRestore -SrrFile $srrInOutput.FullName -SourcePath $deleteSourcesSource -OutputPath $deleteSourcesOutput -DeleteSources -SkipValidation -Confirm:$false
+
+            # Verify source file was deleted
+            Test-Path -Path $testSourceFile.FullName | Should -Be $false
+
+            # Cleanup
+            Remove-Item -Path $deleteSourcesDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
         AfterAll {
             if ($script:testWorkDir -and (Test-Path -Path $script:testWorkDir)) {
                 Remove-Item -Path $script:testWorkDir -Recurse -Force -ErrorAction 'SilentlyContinue'

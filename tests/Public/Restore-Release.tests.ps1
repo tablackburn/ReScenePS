@@ -552,6 +552,17 @@ Describe 'Restore-Release' {
             $warnings | Should -Match 'No rebuildable releases found'
         }
 
+        It 'Depth=0 processes only parent directory when parent IS rebuildable' {
+            # When the parent directory itself is rebuildable, Depth=0 should process just that directory
+            # without scanning any subdirectories
+            $result = Restore-Release -Path $script:level1Rebuildable -Depth 0 -WhatIf
+
+            # Should process only the parent directory (which is rebuildable)
+            $result.Processed | Should -Be 1
+            $result.Skipped | Should -Be 1
+            $result.Details[0].Release | Should -Be 'Level1.Rebuildable.Release-TEST'
+        }
+
         It 'Depth=1 finds immediate subdirectories only' {
             # Should find level1-rebuildable but NOT level2 or level3
             # Use -WhatIf to skip actual restoration and verify scan results

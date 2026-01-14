@@ -116,6 +116,47 @@ Describe 'Get-RebuildableSubdirectory' {
         }
     }
 
+    Context 'Error handling' {
+        It 'Writes warning and continues when Test-RebuildableDirectory throws exception' {
+            $errorTestDir = Join-Path $script:tempDir 'error-handling-test'
+            New-Item -Path $errorTestDir -ItemType Directory -Force | Out-Null
+
+            # Create subdirectories - one rebuildable, one not
+            $rebuildableDir = Join-Path $errorTestDir 'Rebuildable.Release-TEST'
+            $nonRebuildableDir = Join-Path $errorTestDir 'NonRebuildable.Directory'
+            New-Item -Path $rebuildableDir -ItemType Directory -Force | Out-Null
+            New-Item -Path $nonRebuildableDir -ItemType Directory -Force | Out-Null
+
+            # Create SRR in rebuildable directory
+            New-MinimalSrrFile -Path (Join-Path $rebuildableDir 'release.srr')
+
+            InModuleScope ReScenePS -Parameters @{ errorTestDir = $errorTestDir; rebuildableDir = $rebuildableDir; nonRebuildableDir = $nonRebuildableDir } {
+                param($errorTestDir, $rebuildableDir, $nonRebuildableDir)
+
+                # Mock Test-RebuildableDirectory to throw for the non-rebuildable dir
+                Mock Test-RebuildableDirectory {
+                    param($Path)
+                    if ($Path -eq $nonRebuildableDir) {
+                        throw [System.UnauthorizedAccessException]::new("Access denied to $Path")
+                    }
+                    # Call the real function for other paths
+                    return & (Get-Command Test-RebuildableDirectory -CommandType Function) -Path $Path
+                } -Verifiable
+
+                # Should continue processing and return the rebuildable dir, writing a warning
+                $warningOutput = $null
+                $result = Get-RebuildableSubdirectory -Path $errorTestDir -Depth 1 -WarningVariable warningOutput 3>&1
+
+                # Should have found the rebuildable directory
+                @($result).Count | Should -BeGreaterOrEqual 1
+                $result | Should -Contain $rebuildableDir
+            }
+
+            # Cleanup
+            Remove-Item -Path $errorTestDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Context 'Video file detection' {
         BeforeAll {
             $script:videoDir = Join-Path $script:tempDir 'video-detection'

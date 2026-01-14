@@ -75,6 +75,42 @@ Describe 'Test-RebuildableDirectory' {
             New-Item -Path $script:videoDir -ItemType Directory -Force | Out-Null
         }
 
+        It 'Detects video files with uppercase extensions (.MKV)' {
+            $upperCaseDir = Join-Path $script:tempDir 'uppercase-ext'
+            New-Item -Path $upperCaseDir -ItemType Directory -Force | Out-Null
+
+            # Create a 100MB file with uppercase extension
+            $videoPath = Join-Path $upperCaseDir 'MOVIE.MKV'
+            $fs = [System.IO.File]::Create($videoPath)
+            $fs.SetLength(100MB)
+            $fs.Close()
+
+            InModuleScope ReScenePS -Parameters @{ path = $upperCaseDir } {
+                param($path)
+                Test-RebuildableDirectory -Path $path | Should -Be $true
+            }
+
+            Remove-Item -Path $upperCaseDir -Recurse -Force
+        }
+
+        It 'Detects video files with mixed case extensions (.Mp4)' {
+            $mixedCaseDir = Join-Path $script:tempDir 'mixedcase-ext'
+            New-Item -Path $mixedCaseDir -ItemType Directory -Force | Out-Null
+
+            # Create a 100MB file with mixed case extension
+            $videoPath = Join-Path $mixedCaseDir 'movie.Mp4'
+            $fs = [System.IO.File]::Create($videoPath)
+            $fs.SetLength(100MB)
+            $fs.Close()
+
+            InModuleScope ReScenePS -Parameters @{ path = $mixedCaseDir } {
+                param($path)
+                Test-RebuildableDirectory -Path $path | Should -Be $true
+            }
+
+            Remove-Item -Path $mixedCaseDir -Recurse -Force
+        }
+
         It 'Returns true for directory with large .mkv file (>= 100MB)' {
             $largeVideoDir = Join-Path $script:tempDir 'large-mkv'
             New-Item -Path $largeVideoDir -ItemType Directory -Force | Out-Null

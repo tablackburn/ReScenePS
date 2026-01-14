@@ -137,14 +137,23 @@ function Restore-Release {
 
         if ($Recurse) {
             # Recurse mode: process all subdirectories
-            $dirs = Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName
-            if ($dirs) { $releaseDirs.AddRange([string[]]$dirs) }
+            $dirs = @(Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName)
+            if ($dirs.Count -gt 0) { $releaseDirs.AddRange($dirs) }
             Write-Host "Scanning for releases in: $Path" -ForegroundColor Yellow
             Write-Host "Found $($releaseDirs.Count) subdirectories to process" -ForegroundColor Gray
         }
         else {
             # Single mode: check if current directory is rebuildable
-            $isRebuildable = try { Test-RebuildableDirectory -Path $Path } catch { $false }
+            $isRebuildable = try { Test-RebuildableDirectory -Path $Path -ErrorAction Stop } catch [System.UnauthorizedAccessException] {
+                Write-Warning "Access denied checking directory '$Path': $($_.Exception.Message)"
+                $false
+            } catch [System.IO.IOException] {
+                Write-Warning "IO error checking directory '$Path': $($_.Exception.Message)"
+                $false
+            } catch {
+                Write-Warning "Error checking directory '$Path': $($_.Exception.Message)"
+                $false
+            }
 
             if ($isRebuildable) {
                 $releaseDirs.Add($Path)
@@ -152,8 +161,8 @@ function Restore-Release {
             elseif ($Depth -gt 0) {
                 # Scan subdirectories for rebuildable content
                 Write-Host "Scanning for rebuildable releases in: $Path (depth: $Depth)" -ForegroundColor Yellow
-                $foundDirs = Get-RebuildableSubdirectory -Path $Path -Depth $Depth
-                if ($foundDirs) { $releaseDirs.AddRange([string[]]$foundDirs) }
+                $foundDirs = @(Get-RebuildableSubdirectory -Path $Path -Depth $Depth)
+                if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange($foundDirs) }
                 if ($releaseDirs.Count -gt 0) {
                     Write-Host "Found $($releaseDirs.Count) rebuildable release(s)" -ForegroundColor Gray
                 }
