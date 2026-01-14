@@ -23,8 +23,7 @@ This is the main automation command for ReScenePS.
 It performs:
 - Detection of release names from directory names
 - Querying srrDB for release metadata
-- Downloading SRR files and any additional files from srrDB (proof images, samples, etc.
-  that are stored separately on srrDB rather than embedded in the SRR file)
+- Downloading SRR files and any additional files from srrDB (proof images, samples, etc. that are stored separately on srrDB rather than embedded in the SRR file)
 - Calling Invoke-SrrRestore to rebuild the release with original names and structure
 
 Requires the SrrDBAutomationToolkit module for srrDB API access.
@@ -60,7 +59,7 @@ Restore-Release -KeepSrr -WhatIf
 Preview what would happen without making changes.
 
 ### EXAMPLE 5
-```
+```powershell
 Restore-Release -DeleteSources
 ```
 
@@ -73,10 +72,8 @@ Directory to scan for releases.
 Defaults to current directory.
 
 In single mode (default), the function first checks if the specified directory
-contains rebuildable content (video files \>= 100MB or .srr files).
-If so, it
-processes that directory as a release.
-If not, it automatically scans immediate
+contains rebuildable content (video files \>= 100MB or .srr files). If so, it
+processes that directory as a release. If not, it automatically scans immediate
 subdirectories for rebuildable releases.
 
 With -Recurse, treats each subdirectory as a separate release without checking
@@ -223,7 +220,7 @@ Accept wildcard characters: False
 ```
 
 ### -ProgressAction
-{{ Fill ProgressAction Description }}
+Specifies how the cmdlet responds to progress updates.
 
 ```yaml
 Type: ActionPreference

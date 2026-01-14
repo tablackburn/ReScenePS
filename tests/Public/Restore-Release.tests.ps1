@@ -68,6 +68,10 @@ Describe 'Restore-Release' {
             $param = $cmd.Parameters['Depth']
             $param | Should -Not -BeNull
             $param.ParameterType | Should -Be ([int])
+            # Verify default value by parsing the function's AST
+            $ast = (Get-Command Restore-Release).ScriptBlock.Ast
+            $depthParam = $ast.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Depth' }
+            $depthParam.DefaultValue.Value | Should -Be 1
         }
 
         It 'Depth parameter has ValidateRange(0, 10)' {
