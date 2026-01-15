@@ -53,11 +53,16 @@ function Test-PathWithinDirectory {
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
     $resolvedBase = [System.IO.Path]::GetFullPath($BaseDirectory)
 
+    # Use case-insensitive comparison on Windows, case-sensitive on Linux/macOS
+    $comparison = if ($IsWindows -or (-not (Test-Path variable:IsWindows))) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+
     # Check if path equals base directory or starts with base directory + separator
     # The separator check prevents "C:\OutputMalicious" matching base "C:\Output"
-    return $resolvedPath -eq $resolvedBase -or
-        $resolvedPath.StartsWith(
-            $resolvedBase.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar,
-            [System.StringComparison]::OrdinalIgnoreCase
-        )
+    $basePrefixWithSeparator = $resolvedBase.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    return $resolvedPath.Equals($resolvedBase, $comparison) -or
+        $resolvedPath.StartsWith($basePrefixWithSeparator, $comparison)
 }
