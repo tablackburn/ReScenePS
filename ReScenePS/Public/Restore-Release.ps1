@@ -151,8 +151,10 @@ function Restore-Release {
                 Write-Warning "IO error checking directory '$Path': $($_.Exception.Message)"
                 $false
             } catch [System.Management.Automation.RuntimeException] {
-                # Catch PowerShell runtime errors (e.g., cmdlet failures) but allow critical
-                # exceptions like OutOfMemoryException and StackOverflowException to propagate
+                # Catch PowerShell runtime errors (e.g., cmdlet failures, ItemNotFoundException,
+                # CmdletInvocationException) as a fallback. Critical system exceptions like
+                # OutOfMemoryException and StackOverflowException are not derived from
+                # RuntimeException and will propagate normally.
                 Write-Warning "Error checking directory '$Path': $($_.Exception.Message)"
                 $false
             }
@@ -161,7 +163,7 @@ function Restore-Release {
                 $releaseDirs.Add($Path)
             }
             elseif ($Depth -gt 0) {
-                # Scan subdirectories for rebuildable content
+                # Current directory is not rebuildable; scan subdirectories for rebuildable content
                 Write-Host "Scanning for rebuildable releases in: $Path (depth: $Depth)" -ForegroundColor Yellow
                 $foundDirs = @(Get-RebuildableSubdirectory -Path $Path -Depth $Depth)
                 if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange([string[]]$foundDirs) }

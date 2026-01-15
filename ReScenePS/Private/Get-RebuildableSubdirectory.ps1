@@ -36,11 +36,16 @@ function Get-RebuildableSubdirectory {
         [string]$Path,
 
         [Parameter()]
-        [ValidateRange(1, 10)]
+        [ValidateRange(0, 10)]
         [int]$Depth = 1
     )
 
     $rebuildableDirs = [System.Collections.Generic.List[string]]::new()
+
+    # Depth 0 means no subdirectory scanning - return empty immediately
+    if ($Depth -eq 0) {
+        return $rebuildableDirs.ToArray()
+    }
 
     # Validate path exists before scanning
     if (-not (Test-Path $Path -PathType Container)) {

@@ -16,6 +16,13 @@ function Test-PathWithinDirectory {
     and Path="C:\OutputMalicious\file.txt" would incorrectly pass a simple
     StartsWith("C:\Output") check.
 
+    .NOTES
+    Security consideration: GetFullPath resolves symbolic links on some platforms.
+    In environments where an attacker can create symlinks pointing outside the base
+    directory, additional symlink validation may be needed. For typical SRR/SRS
+    reconstruction scenarios where input comes from trusted archive files, this
+    is not a concern.
+
     .PARAMETER Path
     The path to validate (may contain relative components like ".." or ".").
 

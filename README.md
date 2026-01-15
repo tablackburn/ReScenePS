@@ -42,8 +42,8 @@ Invoke-SrrRestore
 # Explicit paths
 Invoke-SrrRestore -SrrFile "release.srr" -SourcePath "./sources" -OutputPath "./output"
 
-# Keep source files after reconstruction
-Invoke-SrrRestore -KeepSrr -KeepSources
+# Keep SRR file after reconstruction (source files are kept by default)
+Invoke-SrrRestore -KeepSrr
 ```
 
 ### Reconstruct Video Sample from SRS
