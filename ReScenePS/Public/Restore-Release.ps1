@@ -138,7 +138,7 @@ function Restore-Release {
         if ($Recurse) {
             # Recurse mode: process all subdirectories
             $dirs = @(Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName)
-            if ($dirs.Count -gt 0) { $releaseDirs.AddRange($dirs) }
+            if ($dirs.Count -gt 0) { $releaseDirs.AddRange([string[]]$dirs) }
             Write-Host "Scanning for releases in: $Path" -ForegroundColor Yellow
             Write-Host "Found $($releaseDirs.Count) subdirectories to process" -ForegroundColor Gray
         }
@@ -160,7 +160,7 @@ function Restore-Release {
                 # Current directory is not rebuildable; scan subdirectories for rebuildable content
                 Write-Host "Scanning for rebuildable releases in: $Path (depth: $Depth)" -ForegroundColor Yellow
                 $foundDirs = @(Get-RebuildableSubdirectory -Path $Path -Depth $Depth)
-                if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange($foundDirs) }
+                if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange([string[]]$foundDirs) }
                 if ($releaseDirs.Count -gt 0) {
                     Write-Host "Found $($releaseDirs.Count) rebuildable release(s)" -ForegroundColor Gray
                 }
