@@ -138,23 +138,17 @@ function Restore-Release {
         if ($Recurse) {
             # Recurse mode: process all subdirectories
             $dirs = @(Get-ChildItem -Path $Path -Directory | Select-Object -ExpandProperty FullName)
-            if ($dirs.Count -gt 0) { $releaseDirs.AddRange([string[]]$dirs) }
+            if ($dirs.Count -gt 0) { $releaseDirs.AddRange($dirs) }
             Write-Host "Scanning for releases in: $Path" -ForegroundColor Yellow
             Write-Host "Found $($releaseDirs.Count) subdirectories to process" -ForegroundColor Gray
         }
         else {
             # Single mode: check if current directory is rebuildable
-            $isRebuildable = try { Test-RebuildableDirectory -Path $Path -ErrorAction Stop } catch [System.UnauthorizedAccessException] {
-                Write-Warning "Access denied checking directory '$Path': $($_.Exception.Message)"
-                $false
-            } catch [System.IO.IOException] {
-                Write-Warning "IO error checking directory '$Path': $($_.Exception.Message)"
-                $false
-            } catch [System.Management.Automation.RuntimeException] {
-                # Catch PowerShell runtime errors (e.g., cmdlet failures, ItemNotFoundException,
-                # CmdletInvocationException) as a fallback. Critical system exceptions like
-                # OutOfMemoryException and StackOverflowException are not derived from
-                # RuntimeException and will propagate normally.
+            # Catch common filesystem and PowerShell errors (access denied, IO errors, cmdlet failures).
+            # Critical system exceptions like OutOfMemoryException propagate normally.
+            $isRebuildable = try {
+                Test-RebuildableDirectory -Path $Path -ErrorAction Stop
+            } catch {
                 Write-Warning "Error checking directory '$Path': $($_.Exception.Message)"
                 $false
             }
@@ -166,7 +160,7 @@ function Restore-Release {
                 # Current directory is not rebuildable; scan subdirectories for rebuildable content
                 Write-Host "Scanning for rebuildable releases in: $Path (depth: $Depth)" -ForegroundColor Yellow
                 $foundDirs = @(Get-RebuildableSubdirectory -Path $Path -Depth $Depth)
-                if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange([string[]]$foundDirs) }
+                if ($foundDirs.Count -gt 0) { $releaseDirs.AddRange($foundDirs) }
                 if ($releaseDirs.Count -gt 0) {
                     Write-Host "Found $($releaseDirs.Count) rebuildable release(s)" -ForegroundColor Gray
                 }

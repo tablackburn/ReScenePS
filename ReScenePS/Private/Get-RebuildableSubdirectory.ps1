@@ -63,9 +63,16 @@ function Get-RebuildableSubdirectory {
 
     if ($totalSubdirs -gt 0) {
         $checkedCount = 0
+        $lastReportedPercent = -1
         foreach ($subdir in $subdirs) {
             $checkedCount++
-            Write-Progress -Activity "Scanning for rebuildable releases" -Status "Checking: $($subdir.Name)" -PercentComplete (($checkedCount / $totalSubdirs) * 100)
+            # Update progress less frequently to reduce overhead for large directory counts.
+            # Report on every item up to 100 items, then only when percentage changes by at least 1%.
+            $currentPercent = [int](($checkedCount / $totalSubdirs) * 100)
+            if ($totalSubdirs -le 100 -or $currentPercent -gt $lastReportedPercent) {
+                Write-Progress -Activity "Scanning for rebuildable releases" -Status "Checking: $($subdir.Name)" -PercentComplete $currentPercent
+                $lastReportedPercent = $currentPercent
+            }
 
             try {
                 if (Test-RebuildableDirectory -Path $subdir.FullName) {

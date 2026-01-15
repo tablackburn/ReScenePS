@@ -53,7 +53,11 @@ function Test-PathWithinDirectory {
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
     $resolvedBase = [System.IO.Path]::GetFullPath($BaseDirectory)
 
-    # Use case-insensitive comparison on Windows, case-sensitive on Linux/macOS
+    # Use case-insensitive comparison on Windows, case-sensitive on Linux/macOS.
+    # Platform detection logic:
+    # - PowerShell Core 6+: $IsWindows is defined ($true on Windows, $false on Linux/macOS)
+    # - Windows PowerShell 5.1: $IsWindows doesn't exist, but we're definitely on Windows
+    # The fallback (-not (Test-Path variable:IsWindows)) handles the 5.1 case correctly.
     $comparison = if ($IsWindows -or (-not (Test-Path variable:IsWindows))) {
         [System.StringComparison]::OrdinalIgnoreCase
     } else {
