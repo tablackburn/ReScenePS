@@ -24,8 +24,9 @@ function Invoke-SrrRestore {
     .PARAMETER KeepSrr
         If specified, do not delete SRR file after successful restoration.
 
-    .PARAMETER KeepSources
-        If specified, do not delete source files (e.g., .mkv) after successful restoration.
+    .PARAMETER DeleteSources
+        If specified, delete source files (e.g., .mkv) after successful restoration.
+        By default, source files are kept.
 
     .PARAMETER SkipValidation
         Skip CRC validation against embedded SFV. Use when source files differ from original
@@ -56,7 +57,7 @@ function Invoke-SrrRestore {
         [switch]$KeepSrr,
 
         [Parameter()]
-        [switch]$KeepSources,
+        [switch]$DeleteSources,
 
         [Parameter()]
         [switch]$SkipValidation
@@ -199,15 +200,12 @@ function Invoke-SrrRestore {
                         $targetPath = Join-Path $OutputPath $relativePath
 
                         # Prevent path traversal attacks (e.g., "..\..\file.txt")
-                        $resolvedPath = [System.IO.Path]::GetFullPath($targetPath)
-                        $resolvedOutputPath = [System.IO.Path]::GetFullPath($OutputPath)
-                        # Check path is within OutputPath (handle edge case where path could match prefix of sibling directory)
-                        $isWithinOutput = $resolvedPath -eq $resolvedOutputPath -or
-                            $resolvedPath.StartsWith($resolvedOutputPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
-                        if (-not $isWithinOutput) {
+                        # Malicious SRR files could contain stored file paths with ".." sequences
+                        # that would write files outside the intended output directory.
+                        if (-not (Test-PathWithinDirectory -Path $targetPath -BaseDirectory $OutputPath)) {
                             throw "Path traversal detected in stored file: $($block.FileName)"
                         }
-                        $targetPath = $resolvedPath
+                        $targetPath = [System.IO.Path]::GetFullPath($targetPath)
 
                         $targetDir = Split-Path $targetPath -Parent
 
@@ -542,8 +540,8 @@ function Invoke-SrrRestore {
                 Write-Host "  Keeping SRR (KeepSrr specified)" -ForegroundColor Gray
             }
 
-            # Source deletions via ShouldProcess/-Confirm
-            if (-not $KeepSources) {
+            # Source deletions via ShouldProcess/-Confirm (only if -DeleteSources specified)
+            if ($DeleteSources) {
                 foreach ($fileName in $sourceFiles.Keys) {
                     $srcPath = $sourceFiles[$fileName].Path
                     if ($PSCmdlet.ShouldProcess($srcPath, "Delete source")) {
@@ -555,7 +553,7 @@ function Invoke-SrrRestore {
                 }
             }
             else {
-                Write-Host "  Keeping source files (KeepSources specified)" -ForegroundColor Gray
+                Write-Host "  Keeping source files (default behavior)" -ForegroundColor Gray
             }
 
             # SRS deletions via ShouldProcess/-Confirm
