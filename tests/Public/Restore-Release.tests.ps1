@@ -49,9 +49,9 @@ Describe 'Restore-Release' {
             $param.ParameterType | Should -Be ([switch])
         }
 
-        It 'Has KeepSources switch parameter' {
+        It 'Has DeleteSources switch parameter' {
             $cmd = Get-Command Restore-Release
-            $param = $cmd.Parameters['KeepSources']
+            $param = $cmd.Parameters['DeleteSources']
             $param | Should -Not -BeNull
             $param.ParameterType | Should -Be ([switch])
         }
@@ -61,6 +61,26 @@ Describe 'Restore-Release' {
             $param = $cmd.Parameters['SkipValidation']
             $param | Should -Not -BeNull
             $param.ParameterType | Should -Be ([switch])
+        }
+
+        It 'Has Depth parameter with default value of 1' {
+            $cmd = Get-Command Restore-Release
+            $param = $cmd.Parameters['Depth']
+            $param | Should -Not -BeNull
+            $param.ParameterType | Should -Be ([int])
+            # Verify default value by parsing the function's AST
+            $ast = (Get-Command Restore-Release).ScriptBlock.Ast
+            $depthParam = $ast.Body.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Depth' }
+            $depthParam.DefaultValue.Value | Should -Be 1
+        }
+
+        It 'Depth parameter has ValidateRange(0, 10)' {
+            $cmd = Get-Command Restore-Release
+            $param = $cmd.Parameters['Depth']
+            $validateRange = $param.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateRangeAttribute] }
+            $validateRange | Should -Not -BeNull
+            $validateRange.MinRange | Should -Be 0
+            $validateRange.MaxRange | Should -Be 10
         }
     }
 
@@ -136,7 +156,7 @@ Describe 'Restore-Release' {
             New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
 
             $result = Restore-Release -Path $emptyDir -Recurse -WarningVariable warnings 3>&1
-            $warnings | Should -Match 'No directories found'
+            $warnings | Should -Match 'No rebuildable releases found'
 
             Remove-Item -Path $emptyDir -Force -Recurse
         }
@@ -211,6 +231,12 @@ Describe 'Restore-Release' {
             $testDir = Join-Path $script:tempDir 'null-srrfile-test'
             New-Item -Path $testDir -ItemType Directory -Force | Out-Null
 
+            # Create a dummy video file to pass Test-RebuildableDirectory (100MB+ required)
+            $dummyVideo = Join-Path $testDir 'movie.mkv'
+            $fs = [System.IO.File]::Create($dummyVideo)
+            $fs.SetLength(100MB)
+            $fs.Close()
+
             try {
                 InModuleScope ReScenePS -Parameters @{ testDir = $testDir } {
                     param($testDir)
@@ -274,9 +300,9 @@ Describe 'Restore-Release' {
             $functionDef | Should -Match 'KeepSrr'
         }
 
-        It 'Passes KeepSources parameter to Invoke-SrrRestore' {
+        It 'Passes DeleteSources parameter to Invoke-SrrRestore' {
             $functionDef = (Get-Command Restore-Release).Definition
-            $functionDef | Should -Match 'KeepSources'
+            $functionDef | Should -Match 'DeleteSources'
         }
 
         It 'Passes SkipValidation parameter to Invoke-SrrRestore' {
@@ -289,6 +315,12 @@ Describe 'Restore-Release' {
         BeforeAll {
             $script:additionalFilesDir = Join-Path $script:tempDir 'additional-files-test'
             New-Item -Path $script:additionalFilesDir -ItemType Directory -Force | Out-Null
+
+            # Create a dummy video file to pass Test-RebuildableDirectory (100MB+ required)
+            $dummyVideo = Join-Path $script:additionalFilesDir 'movie.mkv'
+            $fs = [System.IO.File]::Create($dummyVideo)
+            $fs.SetLength(100MB)
+            $fs.Close()
         }
 
         It 'Outputs additional files when returned by Get-SatReleaseFile' -Skip:(-not (Get-Module SrrDBAutomationToolkit -ListAvailable)) {
@@ -363,6 +395,14 @@ Describe 'Restore-Release' {
             $script:failDir2 = Join-Path $script:errorTestDir 'RESCENEPS_TEST_INVALID_f6e5d4c3b2a1'
             New-Item -Path $script:failDir1 -ItemType Directory -Force | Out-Null
             New-Item -Path $script:failDir2 -ItemType Directory -Force | Out-Null
+
+            # Create dummy video files to pass Test-RebuildableDirectory (100MB+ required)
+            foreach ($dir in @($script:failDir1, $script:failDir2)) {
+                $dummyVideo = Join-Path $dir 'movie.mkv'
+                $fs = [System.IO.File]::Create($dummyVideo)
+                $fs.SetLength(100MB)
+                $fs.Close()
+            }
         }
 
         It 'Continues processing when one release fails in -Recurse mode' {
@@ -478,6 +518,177 @@ Describe 'Restore-Release' {
 
             # Cleanup
             Remove-Item -Path $parentDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'Depth parameter behavior' {
+        BeforeAll {
+            $script:depthTestDir = Join-Path $script:tempDir 'depth-test'
+            New-Item -Path $script:depthTestDir -ItemType Directory -Force | Out-Null
+
+            # Create directory structure:
+            # depth-test/
+            #   level1-rebuildable/          (has SRR file - rebuildable)
+            #   level1-not-rebuildable/      (no video/SRR - container only)
+            #     level2-rebuildable/        (has SRR file - rebuildable)
+            #       level3-rebuildable/      (has SRR file - rebuildable)
+
+            $script:level1Rebuildable = Join-Path $script:depthTestDir 'Level1.Rebuildable.Release-TEST'
+            $script:level1NotRebuildable = Join-Path $script:depthTestDir 'Level1.Container'
+            $script:level2Rebuildable = Join-Path $script:level1NotRebuildable 'Level2.Rebuildable.Release-TEST'
+            $script:level3Rebuildable = Join-Path $script:level2Rebuildable 'Level3.Rebuildable.Release-TEST'
+
+            New-Item -Path $script:level1Rebuildable -ItemType Directory -Force | Out-Null
+            New-Item -Path $script:level1NotRebuildable -ItemType Directory -Force | Out-Null
+            New-Item -Path $script:level2Rebuildable -ItemType Directory -Force | Out-Null
+            New-Item -Path $script:level3Rebuildable -ItemType Directory -Force | Out-Null
+
+            # Create SRR files in rebuildable directories (triggers "SRR already exists" path, skipping srrDB)
+            foreach ($dir in @($script:level1Rebuildable, $script:level2Rebuildable, $script:level3Rebuildable)) {
+                New-MinimalSrrFile -Path (Join-Path $dir 'release.srr')
+            }
+        }
+
+        It 'Depth=0 disables subdirectory scanning when parent is not rebuildable' {
+            # When the parent directory is not rebuildable and Depth=0, nothing should be found
+            $result = Restore-Release -Path $script:depthTestDir -Depth 0 -WarningVariable warnings 3>&1
+
+            $warnings | Should -Match 'No rebuildable releases found'
+        }
+
+        It 'Depth=0 processes only parent directory when parent IS rebuildable' {
+            # When the parent directory itself is rebuildable, Depth=0 should process just that directory
+            # without scanning any subdirectories
+            $result = Restore-Release -Path $script:level1Rebuildable -Depth 0 -WhatIf
+
+            # Should process only the parent directory (which is rebuildable)
+            $result.Processed | Should -Be 1
+            $result.Skipped | Should -Be 1
+            $result.Details[0].Release | Should -Be 'Level1.Rebuildable.Release-TEST'
+        }
+
+        It 'Depth=1 finds immediate subdirectories only' {
+            # Should find level1-rebuildable but NOT level2 or level3
+            # Use -WhatIf to skip actual restoration and verify scan results
+            $result = Restore-Release -Path $script:depthTestDir -Depth 1 -WhatIf
+
+            # Only the one immediate rebuildable subdir should be found
+            $result.Processed | Should -Be 1
+            $result.Skipped | Should -Be 1
+            $result.Details[0].Release | Should -Be 'Level1.Rebuildable.Release-TEST'
+        }
+
+        It 'Depth=2 finds subdirectories and their children' {
+            # Should find level1-rebuildable AND level2-rebuildable, but NOT level3
+            $result = Restore-Release -Path $script:depthTestDir -Depth 2 -WhatIf
+
+            # Both level1 and level2 rebuildable dirs should be found
+            $result.Processed | Should -Be 2
+            $result.Skipped | Should -Be 2
+        }
+
+        It 'Depth=3 finds three levels of subdirectories' {
+            # Should find all three rebuildable directories
+            $result = Restore-Release -Path $script:depthTestDir -Depth 3 -WhatIf
+
+            # All three rebuildable dirs should be found
+            $result.Processed | Should -Be 3
+            $result.Skipped | Should -Be 3
+        }
+
+        It 'Skips non-rebuildable directories at any depth' {
+            # level1-not-rebuildable should never be processed (no SRR or video files)
+            $result = Restore-Release -Path $script:depthTestDir -Depth 3 -WhatIf
+
+            # Should only process the 3 rebuildable directories, not the container
+            $result.Processed | Should -Be 3
+            $result.Details.Release | Should -Not -Contain 'Level1.Container'
+        }
+
+        It 'Depth parameter does not affect Recurse mode' {
+            # In Recurse mode, all immediate subdirectories are processed regardless of Depth
+            # (Depth only affects the auto-detect scanning in single mode)
+            # level1-container will be processed but fail (no SRR or video files)
+            $result = Restore-Release -Path $script:depthTestDir -Recurse -Depth 1
+
+            # Recurse mode processes all immediate subdirs regardless of rebuildable status
+            # This includes Level1.Rebuildable.Release-TEST and Level1.Container
+            $result.Processed | Should -Be 2
+
+            # Verify Depth parameter was ignored - if it wasn't, we'd only get 1 result
+            # because Level1.Container is not rebuildable and would be skipped in single mode
+            $result.Details.Release | Should -Contain 'Level1.Rebuildable.Release-TEST'
+            $result.Details.Release | Should -Contain 'Level1.Container'
+        }
+
+        AfterAll {
+            if ($script:depthTestDir -and (Test-Path $script:depthTestDir)) {
+                Remove-Item -Path $script:depthTestDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context 'Exception handling in rebuildable directory check' {
+        BeforeAll {
+            $script:exceptionTestDir = Join-Path $script:tempDir 'exception-test'
+            New-Item -Path $script:exceptionTestDir -ItemType Directory -Force | Out-Null
+        }
+
+        It 'Handles UnauthorizedAccessException gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.UnauthorizedAccessException]::new("Access denied to test directory")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'Access denied'
+            }
+        }
+
+        It 'Handles IOException gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.IO.IOException]::new("IO error reading directory")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'IO error'
+            }
+        }
+
+        It 'Handles RuntimeException gracefully with warning' {
+            InModuleScope ReScenePS -Parameters @{ path = $script:exceptionTestDir } {
+                param($path)
+
+                Mock Test-RebuildableDirectory {
+                    throw [System.Management.Automation.RuntimeException]::new("PowerShell runtime error")
+                }
+
+                # Should not throw, should write warning and return empty results
+                $warnings = @()
+                $result = Restore-Release -Path $path -Depth 0 -WarningVariable warnings 3>&1
+
+                # Check that at least one warning matches
+                ($warnings -join "`n") | Should -Match 'Error checking directory'
+            }
+        }
+
+        AfterAll {
+            if ($script:exceptionTestDir -and (Test-Path $script:exceptionTestDir)) {
+                Remove-Item -Path $script:exceptionTestDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }

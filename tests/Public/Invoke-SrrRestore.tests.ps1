@@ -48,9 +48,9 @@ Describe 'Invoke-SrrRestore' {
             $param.SwitchParameter | Should -BeTrue
         }
 
-        It 'Has KeepSources switch parameter' {
+        It 'Has DeleteSources switch parameter' {
             $cmd = Get-Command Invoke-SrrRestore
-            $param = $cmd.Parameters['KeepSources']
+            $param = $cmd.Parameters['DeleteSources']
             $param | Should -Not -BeNull
             $param.SwitchParameter | Should -BeTrue
         }
