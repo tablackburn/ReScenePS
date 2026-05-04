@@ -23,12 +23,12 @@ properties {
     if (-not $Env:BHPSModuleManifest -or -not $Env:BHProjectName) {
         throw 'Coverage configuration requires BuildHelpers env vars. Run via ./build.ps1 or call Set-BuildEnvironment first.'
     }
-    $_moduleVersion = (Import-PowerShellDataFile -Path $Env:BHPSModuleManifest).ModuleVersion
-    $_stagedOutput = [IO.Path]::Combine($PSScriptRoot, 'Output', $Env:BHProjectName, $_moduleVersion)
+    $moduleVersion = (Import-PowerShellDataFile -Path $Env:BHPSModuleManifest).ModuleVersion
+    $stagedOutput = [IO.Path]::Combine($PSScriptRoot, 'Output', $Env:BHProjectName, $moduleVersion)
     $PSBPreference.Test.CodeCoverage.Files = @(
-        "$_stagedOutput/Public/*.ps1"
-        "$_stagedOutput/Private/*.ps1"
-        "$_stagedOutput/Classes/*.ps1"
+        "$stagedOutput/Public/*.ps1"
+        "$stagedOutput/Private/*.ps1"
+        "$stagedOutput/Classes/*.ps1"
     )
     $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
     $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
