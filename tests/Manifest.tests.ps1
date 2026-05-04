@@ -26,6 +26,11 @@ BeforeDiscovery {
     If the BHBuildOutput environment variable exists, it is running in a psake build, so do not
     build the module. #>
     if ($null -eq $Env:BHBuildOutput) {
+        # Populate BuildHelpers env vars so build.psake.ps1's properties block has
+        # the values it needs (BHPSModuleManifest, BHProjectName) — when running
+        # via ./build.ps1 this happens before psake; running tests in isolation
+        # bypasses that, so we do it here.
+        Set-BuildEnvironment -Path (Split-Path -Parent $PSScriptRoot) -Force
         $buildFilePath = Join-Path -Path $PSScriptRoot -ChildPath '..\build.psake.ps1'
         $invokePsakeParameters = @{
             TaskList  = 'Build'
@@ -59,6 +64,11 @@ BeforeAll {
     If the BHBuildOutput environment variable exists, it is running in a psake build, so do not
     build the module. #>
     if ($null -eq $Env:BHBuildOutput) {
+        # Populate BuildHelpers env vars so build.psake.ps1's properties block has
+        # the values it needs (BHPSModuleManifest, BHProjectName) — when running
+        # via ./build.ps1 this happens before psake; running tests in isolation
+        # bypasses that, so we do it here.
+        Set-BuildEnvironment -Path (Split-Path -Parent $PSScriptRoot) -Force
         $buildFilePath = Join-Path -Path $PSScriptRoot -ChildPath '..\build.psake.ps1'
         $invokePsakeParameters = @{
             TaskList  = 'Build'
