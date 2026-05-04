@@ -14,19 +14,21 @@ properties {
     $PSBPreference.Test.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'testResults.xml')
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
 
-    # Code coverage configuration
-    # Coverage files must point to Output directory where tests actually execute
-    # (Tests import module from Output/, not source directory)
-    $moduleName = 'ReScenePS'
-    $sourceManifest = Join-Path $PSScriptRoot "$moduleName/$moduleName.psd1"
-    $moduleVersion = (Import-PowerShellDataFile -Path $sourceManifest).ModuleVersion
-    $moduleOutDir = Join-Path $PSScriptRoot "Output/$moduleName/$moduleVersion"
-
     $PSBPreference.Test.CodeCoverage.Enabled = $true
+    # Coverage must target the staged build output, not the source tree — tests
+    # Import-Module from Output/<Name>/<Version>, so Pester only records hits
+    # against those paths. $Env:BHBuildOutput points at <root>/BuildOutput at
+    # properties-evaluation time (PowerShellBuild rewrites it later inside its
+    # tasks), so we compute the staged path from the manifest version here.
+    if (-not $Env:BHPSModuleManifest -or -not $Env:BHProjectName) {
+        throw 'Coverage configuration requires BuildHelpers env vars. Run via ./build.ps1 or call Set-BuildEnvironment first.'
+    }
+    $_moduleVersion = (Import-PowerShellDataFile -Path $Env:BHPSModuleManifest).ModuleVersion
+    $_stagedOutput = [IO.Path]::Combine($PSScriptRoot, 'Output', $Env:BHProjectName, $_moduleVersion)
     $PSBPreference.Test.CodeCoverage.Files = @(
-        "$moduleOutDir/Public/*.ps1"
-        "$moduleOutDir/Private/*.ps1"
-        "$moduleOutDir/Classes/*.ps1"
+        "$_stagedOutput/Public/*.ps1"
+        "$_stagedOutput/Private/*.ps1"
+        "$_stagedOutput/Classes/*.ps1"
     )
     $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
     $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
