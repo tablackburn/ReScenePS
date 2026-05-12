@@ -9,11 +9,11 @@ BeforeAll {
         $projectRoot = $PSScriptRoot
     }
 
-    $allTextFiles      = Get-TextFilesList $projectRoot
+    $allTextFiles      = Get-TextFilesList -Root $projectRoot
     $unicodeFilesCount = 0
     $totalTabsCount    = 0
     foreach ($textFile in $allTextFiles) {
-        if (Test-FileUnicode $textFile) {
+        if (Test-FileUnicode -FileInfo $textFile) {
             $unicodeFilesCount++
             Write-Warning (
                 "File $($textFile.FullName) contains 0x00 bytes." +
@@ -24,7 +24,7 @@ BeforeAll {
         $unicodeFilesCount | Should -Be 0
 
         $fileName = $textFile.FullName
-        (Get-Content $fileName -Raw) | Select-String "`t" | Foreach-Object {
+        (Get-Content -Path $fileName -Raw) | Select-String -Pattern "`t" | Foreach-Object {
             Write-Warning (
                 "There are tabs in $fileName." +
                 ' Use Fixer "Get-TextFilesList `$pwd | ConvertTo-SpaceIndentation".'
