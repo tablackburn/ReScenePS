@@ -154,16 +154,12 @@ BeforeAll {
     $requirements = Import-PowerShellDataFile $requirementsPath -ErrorAction 'Stop'
 
     # Parse the version from the changelog
-    # Note: Use foreach statement (not ForEach-Object) because 'break' doesn't work reliably in ForEach-Object
     $changelogPath = Join-Path -Path $Env:BHProjectPath -ChildPath 'CHANGELOG.md'
     $changelogVersionPattern = '^##\s\\?\[(?<Version>(\d+\.){1,3}\d+)\\?\]' # Matches on a line that starts with '## [Version]' or '## \[Version\]'
-    $changelogVersion = $null
-    foreach ($line in Get-Content $changelogPath) {
-        if ($line -match $changelogVersionPattern) {
-            $changelogVersion = $matches.Version
-            break
-        }
-    }
+    # Select-String returns the first matching line's named capture directly — no loop and no
+    # 'break' (which is unreliable inside ForEach-Object, since a pipeline is not a loop).
+    $changelogVersion = (Select-String -Path $changelogPath -Pattern $changelogVersionPattern |
+        Select-Object -First 1).Matches[0].Groups['Version'].Value
 }
 Describe 'Module manifest' {
 
