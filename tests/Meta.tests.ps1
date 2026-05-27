@@ -2,18 +2,18 @@ BeforeAll {
     Set-StrictMode -Version 'Latest'
 
     # Make sure MetaFixers.psm1 is loaded - it contains Get-TextFilesList
-    Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MetaFixers.psm1') -Verbose:$false -Force
+    Import-Module (Join-Path -Path $PSScriptRoot -ChildPath 'MetaFixers.psm1') -Verbose:$false -Force
 
     $projectRoot = $Env:BHProjectPath
     if (-not $projectRoot) {
         $projectRoot = $PSScriptRoot
     }
 
-    $allTextFiles      = Get-TextFilesList -Root $projectRoot
+    $allTextFiles      = Get-TextFilesList $projectRoot
     $unicodeFilesCount = 0
     $totalTabsCount    = 0
     foreach ($textFile in $allTextFiles) {
-        if (Test-FileUnicode -FileInfo $textFile) {
+        if (Test-FileUnicode $textFile) {
             $unicodeFilesCount++
             Write-Warning (
                 "File $($textFile.FullName) contains 0x00 bytes." +
@@ -24,7 +24,7 @@ BeforeAll {
         $unicodeFilesCount | Should -Be 0
 
         $fileName = $textFile.FullName
-        (Get-Content -Path $fileName -Raw) | Select-String -Pattern "`t" | Foreach-Object {
+        (Get-Content -Path $fileName -Raw) | Select-String "`t" | Foreach-Object {
             Write-Warning (
                 "There are tabs in $fileName." +
                 ' Use Fixer "Get-TextFilesList `$pwd | ConvertTo-SpaceIndentation".'

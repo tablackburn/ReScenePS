@@ -167,6 +167,6 @@ function Get-UnicodeFilesList {
     )
 
     $root | Get-TextFilesList | Where-Object {
-        Test-FileUnicode -FileInfo $_
+        Test-FileUnicode $_
     }
 }

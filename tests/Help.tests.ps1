@@ -84,7 +84,7 @@ BeforeDiscovery {
     # PowerShellBuild outputs to Output/<ModuleName>/<Version>/, override BHBuildOutput
     $projectRoot = Split-Path -Path $PSScriptRoot -Parent
     $sourceManifest = Join-Path -Path $projectRoot -ChildPath "$Env:BHProjectName/$Env:BHProjectName.psd1"
-    $moduleVersion = (Import-PowerShellDataFile -Path $sourceManifest).ModuleVersion
+    $moduleVersion = (Import-PowerShellDataFile $sourceManifest).ModuleVersion
     $Env:BHBuildOutput = Join-Path -Path $projectRoot -ChildPath "Output/$Env:BHProjectName/$moduleVersion"
 
     # Define the path to the module manifest
@@ -97,18 +97,18 @@ BeforeDiscovery {
         'Classes'
     ) | ForEach-Object {
         $path = Join-Path -Path $Env:BHBuildOutput -ChildPath $_
-        if (Test-Path -Path $path) {
+        if (Test-Path $path) {
             $global:CustomTypes += (Get-ChildItem -Path $path -Recurse -ErrorAction 'SilentlyContinue').BaseName
         }
     }
 
     # Remove all versions of the module from the session. Pester can't handle multiple versions.
-    Get-Module -Name $Env:BHProjectName | Remove-Module -Force -ErrorAction 'Ignore'
-    Import-Module -Name $moduleManifestPath -Verbose:$false -ErrorAction 'Stop'
+    Get-Module $Env:BHProjectName | Remove-Module -Force -ErrorAction 'Ignore'
+    Import-Module $moduleManifestPath -Verbose:$false -ErrorAction 'Stop'
 
     # Get module commands
     $getCommandParameters = @{
-        Module      = (Get-Module -Name $Env:BHProjectName)
+        Module      = (Get-Module $Env:BHProjectName)
         CommandType = [System.Management.Automation.CommandTypes[]]'Cmdlet, Function' # Not alias
     }
     if ($PSVersionTable.PSVersion.Major -lt 6) {
@@ -148,10 +148,10 @@ Describe "Test help for <_.Name>" -ForEach $commands {
         # -ForEach, which Pester evaluates during discovery (before BeforeAll runs).
         $command               = $_
         $commandName           = $command.Name
-        $commandHelp           = Get-Help -Name $command.Name -ErrorAction 'SilentlyContinue'
-        $commandParameters     = global:FilterOutCommonParameters -Parameters $command.ParameterSets.Parameters
+        $commandHelp           = Get-Help $command.Name -ErrorAction 'SilentlyContinue'
+        $commandParameters     = global:FilterOutCommonParameters $command.ParameterSets.Parameters
         $commandParameterNames = $commandParameters.Name
-        $helpParameters        = global:FilterOutCommonParameters -Parameters $commandHelp.Parameters.Parameter
+        $helpParameters        = global:FilterOutCommonParameters $commandHelp.Parameters.Parameter
         $helpParameterNames    = $helpParameters.Name
         $helpLinks             = $commandHelp.relatedLinks.navigationLink.uri | Where-Object { $_ -match '^https?://' }
     }
@@ -160,10 +160,10 @@ Describe "Test help for <_.Name>" -ForEach $commands {
         # These variables are needed in both discovery and test phases so we need to duplicate them here
         $command                = $_
         $commandName            = $_.Name
-        $commandHelp            = Get-Help -Name $command.Name -ErrorAction 'SilentlyContinue'
-        $commandParameters      = global:FilterOutCommonParameters -Parameters $command.ParameterSets.Parameters
+        $commandHelp            = Get-Help $command.Name -ErrorAction 'SilentlyContinue'
+        $commandParameters      = global:FilterOutCommonParameters $command.ParameterSets.Parameters
         $commandParameterNames  = $commandParameters.Name
-        $helpParameters         = global:FilterOutCommonParameters -Parameters $commandHelp.Parameters.Parameter
+        $helpParameters         = global:FilterOutCommonParameters $commandHelp.Parameters.Parameter
         $helpParameterNames     = $helpParameters.Name
     }
 
