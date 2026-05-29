@@ -27,6 +27,7 @@ function ConvertTo-UTF8 {
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [ValidateNotNull()]
         [System.IO.FileInfo]$FileInfo
     )
 
@@ -56,6 +57,7 @@ function ConvertTo-SpaceIndentation {
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [ValidateNotNull()]
         [System.IO.FileInfo]$FileInfo
     )
 
@@ -85,6 +87,7 @@ function Get-TextFilesList {
     [OutputType([System.IO.FileInfo])]
     param(
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Root
     )
 
@@ -159,6 +162,7 @@ function Get-UnicodeFilesList {
     [OutputType([System.IO.FileInfo])]
     param(
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$Root
     )
 
