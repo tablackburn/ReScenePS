@@ -69,7 +69,7 @@ jobs:
       run: ./build.ps1 -Task Test -Bootstrap
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest'
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
       with:
         files: out/coverage.xml
         fail_ci_if_error: false
