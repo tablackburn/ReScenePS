@@ -15,7 +15,7 @@ jobs:
     name: PSScriptAnalyzer Lint
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Install PSScriptAnalyzer
       shell: pwsh
       run: |
@@ -51,7 +51,7 @@ jobs:
       PAT_SERVER_URI: ${{ secrets.PAT_SERVER_URI }}
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Free Disk Space (Linux)
       if: runner.os == 'Linux'
       run: |
