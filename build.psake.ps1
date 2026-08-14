@@ -189,6 +189,24 @@ Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Descripti
         $configuration.Output.Verbosity = 'Detailed'
         $configuration.Run.PassThru = $true
         $configuration.Run.Path = $PSBPreference.Test.RootDir
+
+        # Timing-sensitive tests cannot run under the coverage tracer. Measured on
+        # Pester 6.1.0, the same 1MB byte-array comparison takes 105ms with coverage
+        # off and 8,340ms with it on -- a 79x inflation, so the assertion measures
+        # Pester's instrumentation rather than the code under test. Under Pester 5 the
+        # same test measured ~3s against a 5s budget: still meaningless, just narrowly
+        # under the line. These files therefore run in a second pass with coverage
+        # disabled (below) and are excluded here. Matching is by name so repos without
+        # performance tests get an empty list and a single pass, unchanged.
+        $noCoverageTestFiles = @(
+            Get-ChildItem -Path $PSBPreference.Test.RootDir -Recurse -File |
+                Where-Object { $_.Name -like '*Performance*.tests.ps1' } |
+                Select-Object -ExpandProperty 'FullName'
+        )
+        if ($noCoverageTestFiles.Count -gt 0) {
+            $configuration.Run.ExcludePath = $noCoverageTestFiles
+        }
+
         $configuration.TestResult.Enabled = -not [string]::IsNullOrEmpty($PSBPreference.Test.OutputFile)
         $configuration.TestResult.OutputPath = $PSBPreference.Test.OutputFile
         $configuration.TestResult.OutputFormat = $PSBPreference.Test.OutputFormat
@@ -214,6 +232,38 @@ Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Descripti
 
         $testResult = Invoke-Pester -Configuration $configuration
 
+        # Second pass: the timing-sensitive files, uninstrumented. Coverage is left off
+        # rather than merged -- these files exercise the module only incidentally, and
+        # their contribution to the coverage figure is noise.
+        $performanceResult = $null
+        if ($noCoverageTestFiles.Count -gt 0) {
+            Write-Verbose "Running $($noCoverageTestFiles.Count) timing-sensitive test file(s) without code coverage." -Verbose
+            $performanceConfiguration = [PesterConfiguration]::Default
+            $performanceConfiguration.Output.Verbosity = 'Detailed'
+            $performanceConfiguration.Run.PassThru = $true
+            $performanceConfiguration.Run.Path = $noCoverageTestFiles
+            $performanceConfiguration.CodeCoverage.Enabled = $false
+            if (-not [string]::IsNullOrEmpty($PSBPreference.Test.OutputFile)) {
+                # Separate file so the main pass's results are not overwritten.
+                $performanceOutputFile = [IO.Path]::ChangeExtension($PSBPreference.Test.OutputFile, $null) +
+                    'Performance' + [IO.Path]::GetExtension($PSBPreference.Test.OutputFile)
+                $performanceConfiguration.TestResult.Enabled = $true
+                $performanceConfiguration.TestResult.OutputPath = $performanceOutputFile
+                $performanceConfiguration.TestResult.OutputFormat = $PSBPreference.Test.OutputFormat
+            }
+            $performanceResult = Invoke-Pester -Configuration $performanceConfiguration
+        }
+
+        # Every gate below must see both passes, or a failure in the second one is
+        # invisible -- the same class of hole these gates exist to close.
+        $allResults = @($testResult)
+        if ($performanceResult) {
+            $allResults += $performanceResult
+        }
+        $failedContainersCount = ($allResults | Measure-Object -Property 'FailedContainersCount' -Sum).Sum
+        $failedBlocksCount = ($allResults | Measure-Object -Property 'FailedBlocksCount' -Sum).Sum
+        $failedCount = ($allResults | Measure-Object -Property 'FailedCount' -Sum).Sum
+
         # FailedCount alone is not enough. When a file fails during discovery -- for
         # example an empty -ForEach under Pester 6 -- Pester fails the whole container
         # and it generates no tests at all: zero passed, zero failed. Gating only on
@@ -224,9 +274,9 @@ Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Descripti
         # container object, so filtering on it silently matches nothing -- reproducing
         # the exact bug this check exists to catch. FailedContainersCount is the
         # property Pester actually maintains.
-        if ($testResult.FailedContainersCount -gt 0) {
-            $testResult.FailedContainers | ForEach-Object { Write-Warning "Container failed: $($_.Item)" }
-            throw "$($testResult.FailedContainersCount) test file(s) failed to run. See 'Container failed' above."
+        if ($failedContainersCount -gt 0) {
+            $allResults.FailedContainers | ForEach-Object { Write-Warning "Container failed: $($_.Item)" }
+            throw "$failedContainersCount test file(s) failed to run. See 'Container failed' above."
         }
 
         # Setup/teardown failures are counted separately again. A BeforeAll that throws
@@ -234,12 +284,12 @@ Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Descripti
         # FailedContainersCount at 0 while the run still reports passing tests -- verified
         # against Pester 6.1.0:
         #   failing AfterAll -> Failed 0, FailedContainers 0, FailedBlocks 1, Passed 1
-        if ($testResult.FailedBlocksCount -gt 0) {
-            $testResult.FailedBlocks | ForEach-Object { Write-Warning "Block failed: $($_.Path -join ' > ')" }
-            throw "$($testResult.FailedBlocksCount) setup/teardown block(s) failed. See 'Block failed' above."
+        if ($failedBlocksCount -gt 0) {
+            $allResults.FailedBlocks | ForEach-Object { Write-Warning "Block failed: $($_.Path -join ' > ')" }
+            throw "$failedBlocksCount setup/teardown block(s) failed. See 'Block failed' above."
         }
 
-        if ($testResult.FailedCount -gt 0) {
+        if ($failedCount -gt 0) {
             throw 'One or more Pester tests failed'
         }
 
@@ -267,9 +317,12 @@ Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Descripti
         # per-test .Executed property -- skipped tests report Executed = $true. Only
         # passed-plus-failed distinguishes a suite that ran from one that did not.
         # Casts are deliberate: with nothing discovered these come back null.
-        $ranCount = [int]$testResult.PassedCount + [int]$testResult.FailedCount
+        $ranCount = ($allResults | Measure-Object -Property 'PassedCount' -Sum).Sum + $failedCount
         if ($ranCount -le 0) {
-            $counts = "discovered $([int]$testResult.TotalCount), skipped $([int]$testResult.SkippedCount), not run $([int]$testResult.NotRunCount)"
+            $counts = 'discovered {0}, skipped {1}, not run {2}' -f
+                ($allResults | Measure-Object -Property 'TotalCount' -Sum).Sum,
+                ($allResults | Measure-Object -Property 'SkippedCount' -Sum).Sum,
+                ($allResults | Measure-Object -Property 'NotRunCount' -Sum).Sum
             throw "Pester ran no tests under [$($PSBPreference.Test.RootDir)] ($counts). Refusing to report success without running tests."
         }
     }
