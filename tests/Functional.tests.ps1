@@ -123,14 +123,33 @@ BeforeDiscovery {
     $script:plexEnabled = Test-PlexAvailable
     $script:srrdbAvailable = $null -ne (Get-Module -Name SrrDBAutomationToolkit -ListAvailable)
 
-    # Discover Plex releases during discovery so ForEach data is available
+    # Discover Plex releases during discovery so ForEach data is available.
+    #
+    # Everything here must be non-fatal. Test-PlexAvailable only reports that a Plex
+    # server is configured, not that this machine can authenticate to it, so on CI it
+    # returns true and the first real call fails with 401 Unauthorized. That is a
+    # terminating error -- -ErrorAction SilentlyContinue does not suppress it -- and a
+    # throw in BeforeDiscovery kills the whole container, taking every non-Plex test in
+    # this file with it. Under Pester 5 that failure was invisible (a dead container
+    # generates no tests, so nothing was reported as missing); the container gate in
+    # build.psake.ps1 now makes it a red build instead.
+    #
+    # Fall back to the same state as "no Plex configured" so the -Skip: conditions on the
+    # Plex-backed Describe blocks do their job.
     if ($script:plexEnabled) {
-        Initialize-PlexForCI | Out-Null
-        $playlistName = 'ReScenePS-TestData'
-        if ($script:testConfig.PlexDataSource.PlaylistName) {
-            $playlistName = $script:testConfig.PlexDataSource.PlaylistName
+        try {
+            Initialize-PlexForCI | Out-Null
+            $playlistName = 'ReScenePS-TestData'
+            if ($script:testConfig.PlexDataSource.PlaylistName) {
+                $playlistName = $script:testConfig.PlexDataSource.PlaylistName
+            }
+            $script:plexReleases = @(Get-PlexTestRelease -PlaylistName $playlistName -ErrorAction 'SilentlyContinue')
         }
-        $script:plexReleases = @(Get-PlexTestRelease -PlaylistName $playlistName -ErrorAction 'SilentlyContinue')
+        catch {
+            Write-Warning "Plex test data unavailable ($($_.Exception.Message)); skipping Plex-backed functional tests."
+            $script:plexEnabled = $false
+            $script:plexReleases = @()
+        }
     }
 }
 
@@ -236,7 +255,7 @@ AfterAll {
 
 Describe 'Get-SrrBlock - Parsing' -Skip:$script:skipFunctionalTests {
 
-    Context 'Parsing <_.Name> (<_.ReleaseType>)' -ForEach $script:srrParsingTests {
+    Context 'Parsing <_.Name> (<_.ReleaseType>)' -ForEach $script:srrParsingTests -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $srrPath = $_.FullPath
@@ -290,7 +309,7 @@ Describe 'Get-SrrBlock - Parsing' -Skip:$script:skipFunctionalTests {
 
 Describe 'Show-SrrInfo - Display' -Skip:$script:skipFunctionalTests {
 
-    Context 'Displaying info for <_.Name> (<_.ReleaseType>)' -ForEach $script:srrParsingTests {
+    Context 'Displaying info for <_.Name> (<_.ReleaseType>)' -ForEach $script:srrParsingTests -AllowNullOrEmptyForEach {
 
         It 'Produces output without errors' {
             $srrPath = $_.FullPath
@@ -318,7 +337,7 @@ Describe 'Invoke-SrrReconstruct - Plex Sources' -Skip:(-not $script:plexEnabled)
         $script:testableReleases = @($script:plexReleases | Where-Object { $_.SrrPath })
     }
 
-    Context 'Reconstructing <_.ReleaseName> (<_.VideoCodec> <_.VideoResolution>)' -ForEach $script:plexReleases {
+    Context 'Reconstructing <_.ReleaseName> (<_.VideoCodec> <_.VideoResolution>)' -ForEach $script:plexReleases -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $release = $_
@@ -409,7 +428,7 @@ Describe 'Invoke-SrrReconstruct - Plex Sources' -Skip:(-not $script:plexEnabled)
 
 Describe 'Invoke-SrrRestore - Full Workflow' -Skip:(-not $script:plexEnabled) {
 
-    Context 'Full restore for <_.ReleaseName>' -ForEach @($script:plexReleases | Select-Object -First 1) {
+    Context 'Full restore for <_.ReleaseName>' -ForEach @($script:plexReleases | Select-Object -First 1) -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $release = $_
@@ -637,7 +656,7 @@ Describe 'Restore-SrsVideo' -Skip:($script:skipFunctionalTests -or $script:srsSa
 
 Describe 'Restore-Release - Integration' -Skip:(-not $script:plexEnabled -or -not $script:srrdbAvailable) {
 
-    Context 'Srrdb query and parse for <_.ReleaseName>' -ForEach $script:plexReleases {
+    Context 'Srrdb query and parse for <_.ReleaseName>' -ForEach $script:plexReleases -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $release = $_
