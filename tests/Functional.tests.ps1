@@ -114,6 +114,7 @@ BeforeDiscovery {
         $script:testConfig = $null
         $script:srrParsingTests = @()
         $script:plexReleases = @()
+        $script:srsSampleTests = @()
     }
 
     # Check Plex and SrrDB availability for -Skip: conditions on Describe blocks
@@ -565,7 +566,7 @@ Describe 'Invoke-SrrRestore - Full Workflow' -Skip:(-not $script:plexEnabled) {
 
 Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $script:srsSampleTests.Count -eq 0) {
 
-    Context 'Parsing <_.Name>' -ForEach $script:srsSampleTests {
+    Context 'Parsing <_.Name>' -ForEach $script:srsSampleTests -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $srsPath = $_.SrsPath
@@ -602,7 +603,7 @@ Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $s
 
 Describe 'Restore-SrsVideo' -Skip:($script:skipFunctionalTests -or $script:srsSampleTests.Count -eq 0) {
 
-    Context 'Reconstructing <_.Name>' -ForEach $script:srsSampleTests {
+    Context 'Reconstructing <_.Name>' -ForEach $script:srsSampleTests -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $sample = $_
