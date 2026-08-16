@@ -31,6 +31,6 @@
         Version = '3.1.0'
     }
     'PlexAutomationToolkit' = @{
-        Version = '0.6.3'
+        Version = '0.11.2'
     }
 }
