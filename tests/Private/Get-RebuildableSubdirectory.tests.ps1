@@ -181,6 +181,10 @@ Describe 'Get-RebuildableSubdirectory' {
                 # Should have found the rebuildable directory
                 @($result).Count | Should -BeGreaterOrEqual 1
                 $result | Should -Contain $rebuildableDir
+
+                # Without this the test passes even if the throwing mock never fired,
+                # which is the whole behaviour under test.
+                Should -InvokeVerifiable
             }
 
             # Cleanup

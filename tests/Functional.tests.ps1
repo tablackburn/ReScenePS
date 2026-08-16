@@ -144,6 +144,15 @@ BeforeDiscovery {
                 $playlistName = $script:testConfig.PlexDataSource.PlaylistName
             }
             $script:plexReleases = @(Get-PlexTestRelease -PlaylistName $playlistName -ErrorAction 'SilentlyContinue')
+
+            # A reachable Plex with an empty playlist is still no test data. The
+            # Plex-backed Describes skip on -not $script:plexEnabled, so leaving this
+            # $true lets them run with an empty -ForEach: zero contexts, zero tests, and
+            # nothing reported. Turning it off makes the skip explicit and visible.
+            if ($script:plexReleases.Count -eq 0) {
+                Write-Warning "Plex playlist '$playlistName' returned no releases; skipping Plex-backed functional tests."
+                $script:plexEnabled = $false
+            }
         }
         catch {
             Write-Warning "Plex test data unavailable ($($_.Exception.Message)); skipping Plex-backed functional tests."

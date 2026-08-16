@@ -27,9 +27,14 @@ properties {
     $PSBPreference.Test.CodeCoverage.Files = @(
         "$stagedOutput/Public/*.ps1"
         "$stagedOutput/Private/*.ps1"
+        # Classes carries BlockClasses.ps1 and Crc32.ps1. Dropping it silently shrinks
+        # the measured surface rather than failing, so it has to be listed explicitly.
+        "$stagedOutput/Classes/*.ps1"
     )
     $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
-    $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'codeCoverage.xml')
+    # Filename must match the path CI hands to codecov-action, which uploads with
+    # fail_ci_if_error: false -- a mismatch loses coverage silently.
+    $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
     $PSBPreference.Test.CodeCoverage.OutputFileFormat = 'JaCoCo'
 }
 
