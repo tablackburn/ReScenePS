@@ -161,8 +161,15 @@ Describe 'Get-RebuildableSubdirectory' {
             InModuleScope ReScenePS -Parameters @{ errorTestDir = $errorTestDir; rebuildableDir = $rebuildableDir; nonRebuildableDir = $nonRebuildableDir } {
                 param($errorTestDir, $rebuildableDir, $nonRebuildableDir)
 
-                # Mock Test-RebuildableDirectory to throw only for the non-rebuildable dir
-                # Using -ParameterFilter allows other calls to fall through to the real function
+                # Mock Test-RebuildableDirectory to throw only for the non-rebuildable dir.
+                #
+                # Pester 6 removed mock fall-through: a call that matches no -ParameterFilter
+                # no longer runs the real command, it errors with "there is no default mock to
+                # fall back to". Capture the real command first and delegate to it from a
+                # default mock, so every other path behaves as it did under Pester 5.
+                $realTestRebuildableDirectory = Get-Command -Name 'Test-RebuildableDirectory' -CommandType 'Function'
+                Mock Test-RebuildableDirectory { & $realTestRebuildableDirectory -Path $Path }
+
                 Mock Test-RebuildableDirectory {
                     throw [System.UnauthorizedAccessException]::new("Access denied to $Path")
                 } -ParameterFilter { $Path -eq $nonRebuildableDir } -Verifiable
@@ -174,6 +181,10 @@ Describe 'Get-RebuildableSubdirectory' {
                 # Should have found the rebuildable directory
                 @($result).Count | Should -BeGreaterOrEqual 1
                 $result | Should -Contain $rebuildableDir
+
+                # Without this the test passes even if the throwing mock never fired,
+                # which is the whole behaviour under test.
+                Should -InvokeVerifiable
             }
 
             # Cleanup

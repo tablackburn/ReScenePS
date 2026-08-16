@@ -13,7 +13,6 @@ properties {
     # Use absolute paths for test output (relative paths resolve from tests directory)
     $PSBPreference.Test.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'testResults.xml')
     $PSBPreference.Test.OutputFormat = 'NUnitXml'
-
     $PSBPreference.Test.CodeCoverage.Enabled = $true
     # Coverage must target the staged build output, not the source tree — tests
     # Import-Module from Output/<Name>/<Version>, so Pester only records hits
@@ -28,121 +27,26 @@ properties {
     $PSBPreference.Test.CodeCoverage.Files = @(
         "$stagedOutput/Public/*.ps1"
         "$stagedOutput/Private/*.ps1"
+        # Classes carries BlockClasses.ps1 and Crc32.ps1. Dropping it silently shrinks
+        # the measured surface rather than failing, so it has to be listed explicitly.
         "$stagedOutput/Classes/*.ps1"
     )
     $PSBPreference.Test.CodeCoverage.Threshold = 0  # Threshold enforced by Codecov
+    # Filename must match the path CI hands to codecov-action, which uploads with
+    # fail_ci_if_error: false -- a mismatch loses coverage silently.
     $PSBPreference.Test.CodeCoverage.OutputFile = [IO.Path]::Combine($PSScriptRoot, 'out', 'coverage.xml')
     $PSBPreference.Test.CodeCoverage.OutputFileFormat = 'JaCoCo'
-
-    # Test tools configuration
-    $script:ToolsPath = Join-Path -Path $PSScriptRoot -ChildPath 'tools'
-    # UnRAR command-line SFX archive from RARLab
-    $script:UnrarSfxUrl = 'https://www.rarlab.com/rar/unrarw64.exe'
-    $script:UnrarPath = Join-Path -Path $script:ToolsPath -ChildPath 'UnRAR.exe'
 }
 
 Task -Name 'Default' -Depends 'Test'
 
-# Override PowerShellBuild's Pester dependency to include DownloadTestTools
-# This ensures UnRAR is available before running tests
-$PSBPesterDependency = @('Build', 'DownloadTestTools')
-
-Task -Name 'DownloadTestTools' -Description 'Download test dependencies (UnRAR)' {
-    # First check if UnRAR is already available in common locations
-    $existingUnrar = @(
-        'C:\Program Files\WinRAR\UnRAR.exe',
-        'C:\Program Files (x86)\WinRAR\UnRAR.exe',
-        "$env:LOCALAPPDATA\Programs\WinRAR\UnRAR.exe"
-    ) | Where-Object { Test-Path -Path $_ } | Select-Object -First 1
-
-    if ($existingUnrar) {
-        Write-Host "Found existing UnRAR installation: $existingUnrar"
-        Write-Host "Tests will use this installation."
-        return
-    }
-
-    # Check if 7-Zip is available (common on CI runners)
-    $sevenZip = Get-Command '7z' -ErrorAction SilentlyContinue
-    if (-not $sevenZip) {
-        $sevenZipPaths = @(
-            'C:\Program Files\7-Zip\7z.exe',
-            'C:\Program Files (x86)\7-Zip\7z.exe'
-        )
-        $sevenZip = $sevenZipPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-    }
-    else {
-        $sevenZip = $sevenZip.Source
-    }
-
-    if (-not (Test-Path -Path $script:ToolsPath)) {
-        New-Item -Path $script:ToolsPath -ItemType Directory -Force | Out-Null
-        Write-Host "Created tools directory: $script:ToolsPath"
-    }
-
-    if (-not (Test-Path -Path $script:UnrarPath)) {
-        Write-Host "Downloading UnRAR SFX from $script:UnrarSfxUrl..."
-        try {
-            $ProgressPreference = 'SilentlyContinue'  # Speeds up Invoke-WebRequest
-            $sfxPath = Join-Path -Path $script:ToolsPath -ChildPath 'unrarw64.exe'
-            Invoke-WebRequest -Uri $script:UnrarSfxUrl -OutFile $sfxPath -UseBasicParsing
-
-            # Try to extract using 7-Zip first (reliable on CI)
-            if ($sevenZip -and (Test-Path $sevenZip)) {
-                Write-Host "Extracting UnRAR using 7-Zip..."
-                $extractResult = & $sevenZip x $sfxPath "-o$($script:ToolsPath)" -y 2>&1
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "7-Zip extraction returned: $extractResult"
-                }
-            }
-            else {
-                # Fallback: try running the SFX with timeout (might show GUI on Windows)
-                Write-Host "Extracting UnRAR silently to $script:ToolsPath..."
-                Write-Host "(Note: If this hangs, install 7-Zip or WinRAR)"
-                $extractArgs = "-d`"$script:ToolsPath`""
-
-                # Use a job with timeout to prevent hanging on GUI dialogs
-                $job = Start-Job -ScriptBlock {
-                    param($sfx, $args)
-                    Start-Process -FilePath $sfx -ArgumentList $args -Wait -PassThru -WindowStyle Hidden
-                } -ArgumentList $sfxPath, $extractArgs
-
-                $completed = Wait-Job -Job $job -Timeout 30
-                if (-not $completed) {
-                    Write-Warning "UnRAR extraction timed out (GUI installer may need manual interaction)"
-                    Stop-Job -Job $job
-                    Remove-Job -Job $job -Force
-                }
-                else {
-                    $result = Receive-Job -Job $job
-                    Remove-Job -Job $job
-                }
-            }
-
-            # Remove the SFX after extraction
-            Remove-Item -Path $sfxPath -Force -ErrorAction SilentlyContinue
-
-            if (Test-Path -Path $script:UnrarPath) {
-                Write-Host "UnRAR extracted to: $script:UnrarPath"
-            }
-            else {
-                # The SFX might extract to a subdirectory, try to find it
-                $foundUnrar = Get-ChildItem -Path $script:ToolsPath -Filter 'UnRAR.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($foundUnrar) {
-                    Write-Host "UnRAR found at: $($foundUnrar.FullName)"
-                }
-                else {
-                    Write-Warning "UnRAR extraction may have failed - UnRAR.exe not found in tools directory"
-                    Write-Warning "Some functional tests will be skipped."
-                }
-            }
-        }
-        catch {
-            Write-Warning "Failed to download/extract UnRAR: $_"
-            Write-Warning "Some functional tests may be skipped. Install WinRAR or place UnRAR.exe in the tools directory."
-        }
-    }
-    else {
-        Write-Host "UnRAR already present: $script:UnrarPath"
+Task -Name 'Init_Integration' -Description 'Load integration test environment variables from local.settings.ps1' {
+    $localSettingsPath = Join-Path -Path $PSScriptRoot -ChildPath 'tests/local.settings.ps1'
+    if (Test-Path -Path $localSettingsPath) {
+        Write-Host "Loading integration test settings from tests/local.settings.ps1" -ForegroundColor Cyan
+        . $localSettingsPath
+    } else {
+        Write-Host "No local.settings.ps1 found - integration tests will be skipped" -ForegroundColor Yellow
     }
 }
 
@@ -201,5 +105,238 @@ Task -Name 'UpdateReleaseNotes' -Depends 'Build' -Description 'Set built manifes
 # defaults to depending only on 'Test').
 $PSBPublishDependency = @('Test', 'UpdateReleaseNotes')
 
-# Import the Test task from PowerShellBuild (uses $PSBTestDependency which includes Pester and Analyze)
-Task -Name 'Test' -FromModule 'PowerShellBuild' -MinimumVersion '0.7.3'
+# Custom Pester task, used instead of PowerShellBuild's built-in 'Pester' task.
+#
+# Two separate reasons it exists.
+#
+# 1. Version agreement. PowerShellBuild's Test-PSBuildPester runs
+#    `Import-Module Pester -MinimumVersion 5.0.0`, which resolves to the *highest*
+#    installed version. Pester 6 also re-resolves Describe by autoloading during
+#    its per-file discovery, and autoload likewise picks the highest installed
+#    version -- so an exact pin is never actually honoured. Whenever the runner
+#    image ships something newer than the pin, the two collide:
+#
+#      An incompatible version of the Pester.dll assembly is already loaded.
+#
+#    Pester 6.0.1 arrived 2026-07-18 and 6.1.0 on 2026-08-11, breaking CI both
+#    times with no commit to blame. build.depend.psd1 therefore uses
+#    Version = 'latest' and this task imports the highest installed version, so
+#    PSDepend, this task and Pester's autoload all agree and cannot collide.
+#    Do not narrow either back to an exact version without changing the other.
+#
+# 2. Failed containers. PowerShellBuild's gate throws only on FailedCount, which
+#    cannot see a test file that died during discovery -- it generates no tests
+#    at all, so zero failures reads as success. See the gate below.
+$unitTestPreReqs = {
+    # A psake PreCondition returning $false *skips* the task and lets the build succeed.
+    # That is the right behaviour for testing being deliberately switched off, and exactly
+    # the wrong behaviour for a missing test directory -- 'Test' would pass having run
+    # nothing at all. So only Test.Enabled may skip; anything else throws.
+    if (-not $PSBPreference.Test.Enabled) {
+        Write-Warning 'Pester testing is not enabled; skipping UnitTest.'
+        return $false
+    }
+
+    if (-not (Test-Path -Path $PSBPreference.Test.RootDir)) {
+        throw "Test directory [$($PSBPreference.Test.RootDir)] not found, but testing is enabled. Refusing to report success without running tests."
+    }
+
+    return $true
+}
+
+# Depends on 'Build' because $PSBPreference.Build.ModuleOutDir is only populated once
+# PowerShellBuild's Build task has run and staged the module.
+Task -Name 'UnitTest' -Depends 'Build' -PreCondition $unitTestPreReqs -Description 'Execute Pester tests, failing on failed containers as well as failed tests' {
+    # build.depend.psd1 is the single source of truth for the Pester version.
+    $dependencyFile = Join-Path -Path $PSScriptRoot -ChildPath 'build.depend.psd1'
+    $pesterVersion = (Import-PowerShellDataFile -Path $dependencyFile).Pester.Version
+
+    if ($pesterVersion -and $pesterVersion -ne 'latest') {
+        Import-Module -Name 'Pester' -RequiredVersion $pesterVersion -Force -ErrorAction 'Stop'
+    }
+    else {
+        # With 'latest', import the newest installed version. That is also what Pester's
+        # own autoloading resolves to when it re-resolves Describe during per-file
+        # discovery -- keeping the two in agreement is precisely what avoids the
+        # assembly collision, so do not narrow this to a specific version.
+        $newestPester = Get-Module -Name 'Pester' -ListAvailable |
+            Sort-Object -Property 'Version' -Descending |
+            Select-Object -First 1
+        if (-not $newestPester) {
+            throw 'Pester is not installed.'
+        }
+
+        # Import by path, not by -Name $newestPester. A PSModuleInfo stringifies to
+        # its Name, so -Name would import 'Pester' by name and resolve the version
+        # itself -- and if an incompatible Pester is already loaded that re-raises
+        # the very collision this task exists to prevent:
+        #
+        #   An incompatible version of the Pester.dll assembly is already loaded.
+        #
+        # Verified against 5.7.1 preloaded: -Name left the session on 5.7.1.
+        # Unload first so the selected version is the only one in play.
+        Get-Module -Name 'Pester' | Remove-Module -Force -ErrorAction 'SilentlyContinue'
+        Import-Module -Name $newestPester.Path -Force -ErrorAction 'Stop'
+    }
+    Write-Verbose "Using Pester $((Get-Module -Name 'Pester').Version)" -Verbose
+
+    # Remove any previously imported project module and import from the output dir
+    $moduleManifest = Join-Path -Path $PSBPreference.Build.ModuleOutDir -ChildPath "$($PSBPreference.General.ModuleName).psd1"
+    Get-Module -Name $PSBPreference.General.ModuleName | Remove-Module -Force -ErrorAction 'SilentlyContinue'
+    # -ErrorAction Stop so a non-terminating import error fails here rather than letting
+    # the run continue into Pester against a module that was never loaded.
+    Import-Module -Name $moduleManifest -Force -ErrorAction 'Stop'
+
+    Push-Location -LiteralPath $PSBPreference.Test.RootDir
+
+    try {
+        $configuration = [PesterConfiguration]::Default
+        $configuration.Output.Verbosity = 'Detailed'
+        $configuration.Run.PassThru = $true
+        $configuration.Run.Path = $PSBPreference.Test.RootDir
+
+        # Timing-sensitive tests cannot run under the coverage tracer. Measured on
+        # Pester 6.1.0, the same 1MB byte-array comparison takes 105ms with coverage
+        # off and 8,340ms with it on -- a 79x inflation, so the assertion measures
+        # Pester's instrumentation rather than the code under test. Under Pester 5 the
+        # same test measured ~3s against a 5s budget: still meaningless, just narrowly
+        # under the line. These files therefore run in a second pass with coverage
+        # disabled (below) and are excluded here. Matching is by name so repos without
+        # performance tests get an empty list and a single pass, unchanged.
+        $noCoverageTestFiles = @(
+            Get-ChildItem -Path $PSBPreference.Test.RootDir -Recurse -File |
+                Where-Object { $_.Name -like '*Performance*.tests.ps1' } |
+                Select-Object -ExpandProperty 'FullName'
+        )
+        if ($noCoverageTestFiles.Count -gt 0) {
+            $configuration.Run.ExcludePath = $noCoverageTestFiles
+        }
+
+        $configuration.TestResult.Enabled = -not [string]::IsNullOrEmpty($PSBPreference.Test.OutputFile)
+        $configuration.TestResult.OutputPath = $PSBPreference.Test.OutputFile
+        $configuration.TestResult.OutputFormat = $PSBPreference.Test.OutputFormat
+
+        if ($PSBPreference.Test.CodeCoverage.Enabled) {
+            $configuration.CodeCoverage.Enabled = $true
+            # Pester 6 defaults CoveragePercentTarget to 75; this project sets the
+            # threshold to 0 and enforces coverage via Codecov instead. Carry the
+            # configured value across or the default silently reintroduces a gate.
+            #
+            # The two use different units: PowerShellBuild's Threshold is a fraction
+            # ("Threshold required to pass code coverage test (.90 = 90%)"), while
+            # Pester's CoveragePercentTarget is a percentage. Assigning one to the
+            # other unconverted is a no-op at 0, but would turn a later 0.90 into
+            # 0.9% and quietly disable the gate.
+            $configuration.CodeCoverage.CoveragePercentTarget = [double]$PSBPreference.Test.CodeCoverage.Threshold * 100
+            if ($PSBPreference.Test.CodeCoverage.Files.Count -gt 0) {
+                $configuration.CodeCoverage.Path = $PSBPreference.Test.CodeCoverage.Files
+            }
+            $configuration.CodeCoverage.OutputPath = $PSBPreference.Test.CodeCoverage.OutputFile
+            $configuration.CodeCoverage.OutputFormat = $PSBPreference.Test.CodeCoverage.OutputFileFormat
+        }
+
+        $testResult = Invoke-Pester -Configuration $configuration
+
+        # Second pass: the timing-sensitive files, uninstrumented. Coverage is left off
+        # rather than merged -- these files exercise the module only incidentally, and
+        # their contribution to the coverage figure is noise.
+        $performanceResult = $null
+        if ($noCoverageTestFiles.Count -gt 0) {
+            Write-Verbose "Running $($noCoverageTestFiles.Count) timing-sensitive test file(s) without code coverage." -Verbose
+            $performanceConfiguration = [PesterConfiguration]::Default
+            $performanceConfiguration.Output.Verbosity = 'Detailed'
+            $performanceConfiguration.Run.PassThru = $true
+            $performanceConfiguration.Run.Path = $noCoverageTestFiles
+            $performanceConfiguration.CodeCoverage.Enabled = $false
+            if (-not [string]::IsNullOrEmpty($PSBPreference.Test.OutputFile)) {
+                # Separate file so the main pass's results are not overwritten.
+                $performanceOutputFile = [IO.Path]::ChangeExtension($PSBPreference.Test.OutputFile, $null) +
+                    'Performance' + [IO.Path]::GetExtension($PSBPreference.Test.OutputFile)
+                $performanceConfiguration.TestResult.Enabled = $true
+                $performanceConfiguration.TestResult.OutputPath = $performanceOutputFile
+                $performanceConfiguration.TestResult.OutputFormat = $PSBPreference.Test.OutputFormat
+            }
+            $performanceResult = Invoke-Pester -Configuration $performanceConfiguration
+        }
+
+        # Every gate below must see both passes, or a failure in the second one is
+        # invisible -- the same class of hole these gates exist to close.
+        $allResults = @($testResult)
+        if ($performanceResult) {
+            $allResults += $performanceResult
+        }
+        $failedContainersCount = ($allResults | Measure-Object -Property 'FailedContainersCount' -Sum).Sum
+        $failedBlocksCount = ($allResults | Measure-Object -Property 'FailedBlocksCount' -Sum).Sum
+        $failedCount = ($allResults | Measure-Object -Property 'FailedCount' -Sum).Sum
+
+        # FailedCount alone is not enough. When a file fails during discovery -- for
+        # example an empty -ForEach under Pester 6 -- Pester fails the whole container
+        # and it generates no tests at all: zero passed, zero failed. Gating only on
+        # FailedCount reports success while that file never ran, which is how ~777
+        # tests sat silently disabled in PlexAutomationToolkit.
+        # Use FailedContainersCount, not `Containers | Where-Object { -not $_.Passed }`.
+        # A container that dies during discovery still reports Passed = $true on the
+        # container object, so filtering on it silently matches nothing -- reproducing
+        # the exact bug this check exists to catch. FailedContainersCount is the
+        # property Pester actually maintains.
+        if ($failedContainersCount -gt 0) {
+            $allResults.FailedContainers | ForEach-Object { Write-Warning "Container failed: $($_.Item)" }
+            throw "$failedContainersCount test file(s) failed to run. See 'Container failed' above."
+        }
+
+        # Setup/teardown failures are counted separately again. A BeforeAll that throws
+        # can leave FailedCount at 0, and a failing AfterAll leaves both FailedCount and
+        # FailedContainersCount at 0 while the run still reports passing tests -- verified
+        # against Pester 6.1.0:
+        #   failing AfterAll -> Failed 0, FailedContainers 0, FailedBlocks 1, Passed 1
+        if ($failedBlocksCount -gt 0) {
+            $allResults.FailedBlocks | ForEach-Object { Write-Warning "Block failed: $($_.Path -join ' > ')" }
+            throw "$failedBlocksCount setup/teardown block(s) failed. See 'Block failed' above."
+        }
+
+        if ($failedCount -gt 0) {
+            throw 'One or more Pester tests failed'
+        }
+
+        # A run that executed nothing is not a passing run. Every gate above counts
+        # failures, and a run with no executed tests produces zero of all of them.
+        #
+        # Two distinct ways to get there, and TotalCount alone only catches the first:
+        #   1. Nothing discovered -- a bad Run.Path, or a tests directory that stopped
+        #      matching *.Tests.ps1. TotalCount is 0.
+        #   2. Everything discovered but nothing run -- an over-eager filter. Measured
+        #      against Pester 6.1.0 with a filter matching no test name:
+        #        Passed 0 | Failed 0 | Skipped 0 | NotRun 120 | TotalCount 120
+        #      TotalCount is non-zero, every failure count is 0, and the build passed.
+        #
+        # Test.Enabled is the deliberate opt-out and is handled in the PreCondition;
+        # reaching here having run nothing is a fault either way.
+        # Count tests that actually produced a result. Measured against Pester 6.1.0,
+        # three ways to reach "nothing ran" that every failure count reads as success:
+        #
+        #   empty test directory     -> Total 0,   Passed 0, Failed 0, Skipped 0, NotRun 0
+        #   filter matching no test  -> Total 120, Passed 0, Failed 0, Skipped 0, NotRun 120
+        #   every test -Skip         -> Total 3,   Passed 0, Failed 0, Skipped 3, NotRun 0
+        #
+        # TotalCount minus NotRunCount misses the third, and so does filtering on the
+        # per-test .Executed property -- skipped tests report Executed = $true. Only
+        # passed-plus-failed distinguishes a suite that ran from one that did not.
+        # Casts are deliberate: with nothing discovered these come back null.
+        $ranCount = ($allResults | Measure-Object -Property 'PassedCount' -Sum).Sum + $failedCount
+        if ($ranCount -le 0) {
+            $counts = 'discovered {0}, skipped {1}, not run {2}' -f
+                ($allResults | Measure-Object -Property 'TotalCount' -Sum).Sum,
+                ($allResults | Measure-Object -Property 'SkippedCount' -Sum).Sum,
+                ($allResults | Measure-Object -Property 'NotRunCount' -Sum).Sum
+            throw "Pester ran no tests under [$($PSBPreference.Test.RootDir)] ($counts). Refusing to report success without running tests."
+        }
+    }
+    finally {
+        Pop-Location
+        Remove-Module -Name $PSBPreference.General.ModuleName -ErrorAction 'SilentlyContinue'
+    }
+}
+
+# Note: -Depends replaces PowerShellBuild's default dependencies. 'UnitTest' above stands in
+# for PowerShellBuild's 'Pester' task; 'Analyze' is still PowerShellBuild's.
+Task -Name 'Test' -FromModule 'PowerShellBuild' -MinimumVersion '0.7.3' -Depends 'Init_Integration', 'UnitTest', 'Analyze'

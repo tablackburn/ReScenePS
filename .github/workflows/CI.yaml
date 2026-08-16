@@ -14,16 +14,35 @@ jobs:
   lint:
     name: PSScriptAnalyzer Lint
     runs-on: ubuntu-latest
+    # Guard against a hung step burning the 6-hour default. Lint normally
+    # finishes in well under a minute.
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v7
+      with:
+        # No authenticated git commands run in this job.
+        persist-credentials: false
     - name: Install PSScriptAnalyzer
       shell: pwsh
       run: |
+        # Pin to the version build.depend.psd1 declares, so lint results here match
+        # a local ./build.ps1 -Task Analyze. Accepting whatever the runner image
+        # happens to ship means the two can disagree silently.
+        $required = (Import-PowerShellDataFile -Path build.depend.psd1).PSScriptAnalyzer.Version
+        $installed = Get-Module -Name PSScriptAnalyzer -ListAvailable |
+          Where-Object { $_.Version -eq $required }
+        if ($installed) {
+          Write-Host "PSScriptAnalyzer $required already available; skipping install."
+          return
+        }
+
         Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+        Install-Module -Name PSScriptAnalyzer -RequiredVersion $required -Force -Scope CurrentUser
     - name: Run PSScriptAnalyzer
       shell: pwsh
       run: |
+        $required = (Import-PowerShellDataFile -Path build.depend.psd1).PSScriptAnalyzer.Version
+        Import-Module -Name PSScriptAnalyzer -RequiredVersion $required -Force -ErrorAction Stop
         $results = Invoke-ScriptAnalyzer -Path ./ReScenePS -Recurse -Settings PSGallery -ReportSummary
         $errors = $results | Where-Object { $_.Severity -eq 'Error' }
 
@@ -43,6 +62,12 @@ jobs:
   test:
     name: Unit Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Guard against a hung step burning the 6-hour default. The specific hazard
+    # this caught elsewhere in the fleet: BuildHelpers' Invoke-Git calls
+    # WaitForExit() before draining stdout, so on Windows a HEAD commit message
+    # larger than the 4096-byte pipe buffer deadlocks the build with no output
+    # at all. Keep merge-commit messages short.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -52,6 +77,9 @@ jobs:
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
     - uses: actions/checkout@v7
+      with:
+        # No authenticated git commands run in this job.
+        persist-credentials: false
     - name: Free Disk Space (Linux)
       if: runner.os == 'Linux'
       run: |

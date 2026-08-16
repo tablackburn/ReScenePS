@@ -187,7 +187,7 @@ Describe "Test help for <_.Name>" -ForEach $commands {
         ($commandHelp.Examples.Example.Remarks | Select-Object -First 1).Text | Should -Not -BeNullOrEmpty
     }
 
-    It 'Help link <_> is valid' -ForEach $helpLinks {
+    It 'Help link <_> is valid' -ForEach $helpLinks -AllowNullOrEmptyForEach {
         $currentProgressPreference = $ProgressPreference
         $ProgressPreference = 'SilentlyContinue'
         $invokeWebRequestParameters = @{
@@ -201,7 +201,7 @@ Describe "Test help for <_.Name>" -ForEach $commands {
         $statusCode | Should -Be '200'
     }
 
-    Context 'Parameter <_.Name>' -Foreach $commandParameters {
+    Context 'Parameter <_.Name>' -Foreach $commandParameters -AllowNullOrEmptyForEach {
 
         BeforeAll {
             $parameter         = $_
@@ -246,7 +246,7 @@ Describe "Test help for <_.Name>" -ForEach $commands {
         }
     }
 
-    Context 'Test <_> help parameter help for <commandName>' -Foreach $helpParameterNames {
+    Context 'Test <_> help parameter help for <commandName>' -Foreach $helpParameterNames -AllowNullOrEmptyForEach {
 
         # Shouldn't find extra parameters in help
         It 'finds help parameter in code: <_>' {
