@@ -60,9 +60,12 @@ jobs:
         run: |
           Import-Module ./tests/TestHelpers.psm1 -Force
           $health = Get-PlexHealth
-          # Detail names the server URI, which is the value of a secret. Actions masks
-          # secrets in logs, so printing it here is safe -- but it must not travel any
-          # further: this repo is public, and the gh API calls below are not masked.
+          # Get-PlexHealth no longer interpolates the server address into Detail; it
+          # names the configured server by its registered name instead. Detail can
+          # still carry an error message produced by PlexAutomationToolkit, which is
+          # not under our control and could embed the address, so it is printed here
+          # (where Actions masks secrets) but never passed to the GitHub API calls
+          # below, which are not masked. This repository is public.
           Write-Host "Plex health: $($health.State) - $($health.Detail)"
           "state=$($health.State)" >> $env:GITHUB_OUTPUT
 
@@ -90,9 +93,10 @@ jobs:
           | State | \`${STATE:-unknown}\` |
           | Run | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} |
 
-          The diagnostic detail names the server URI, which is a secret value, so it is
-          deliberately not repeated here -- this repository is public and issue bodies are
-          not masked the way workflow logs are. See the run above for the specifics.
+          The diagnostic detail is deliberately not repeated here. It can include an
+          error message from PlexAutomationToolkit that may embed the server address,
+          which is a secret value, and issue bodies are not masked the way workflow
+          logs are. See the run above for the specifics.
 
           **Unauthorized** means the server answered and rejected the credentials, so
           \`PAT_TOKEN\` is wrong or has been revoked. Plex tokens are invalidated by a
