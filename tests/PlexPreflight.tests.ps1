@@ -35,7 +35,14 @@ BeforeDiscovery {
 
 Describe 'Plex preflight' {
     BeforeAll {
-        Import-Module "$PSScriptRoot/TestHelpers.psm1" -Force
+        # No -Force here. Get-PlexHealth caches its result in module state, and
+        # re-importing with -Force discards that cache and triggers a second network
+        # probe. The -Skip: expressions below were evaluated during discovery against
+        # the first probe, so a server that changed state in between would leave an
+        # unskipped test asserting a different reality than the one it was scheduled
+        # against. Importing without -Force is a no-op when already loaded and keeps
+        # both phases on the same answer.
+        Import-Module "$PSScriptRoot/TestHelpers.psm1"
         $script:health = Get-PlexHealth
     }
 

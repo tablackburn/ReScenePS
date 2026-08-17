@@ -274,6 +274,13 @@ function Get-PlexHealth {
                       a secret is wrong or revoked. Somebody needs to act.
       Healthy       - reachable and authenticated.
 
+    Detail deliberately names the configured server by its registered name rather
+    than its URI. The URI is the value of the PAT_SERVER_URI secret, this repository
+    is public, and Actions masks secrets in logs by exact match only -- a trailing
+    slash or a normalised host would defeat it. Note that $test.Error comes from
+    PlexAutomationToolkit and is not under this function's control, so Detail is
+    still treated as untrusted for anything that leaves the runner.
+
     The result is cached for the session: callers sit in BeforeDiscovery, and a network
     round trip per call would be paid repeatedly for an answer that cannot change
     mid-run.
@@ -318,7 +325,10 @@ function Get-PlexHealth {
     # unconditionally and left a developer authenticating as CI-Plex with a stale token,
     # which then looked like a Plex outage.
     $hasEnvironmentCredentials = [bool]($env:PAT_SERVER_URI -and $env:PAT_TOKEN)
-    $isContinuousIntegration = [bool]$env:CI
+    # -eq, not [bool]: [bool]'false' is $true in PowerShell, so a machine with
+    # CI=false exported would have had its stored configuration rewritten. The
+    # comparison is case-insensitive by default, which covers CI=True.
+    $isContinuousIntegration = $env:CI -eq 'true'
 
     if ($hasEnvironmentCredentials -and $isContinuousIntegration) {
         Initialize-PlexForCI | Out-Null
@@ -355,13 +365,13 @@ function Get-PlexHealth {
     }
 
     if (-not $test.IsConnected) {
-        $script:plexHealth = & $result 'Unreachable' "No response from $($test.Uri). $($test.Error)".Trim()
+        $script:plexHealth = & $result 'Unreachable' "No response from server '$($storedServer.Name)'. $($test.Error)".Trim()
     }
     elseif (-not $test.IsAuthenticated) {
-        $script:plexHealth = & $result 'Unauthorized' "$($test.Uri) rejected the credentials. $($test.Error)".Trim()
+        $script:plexHealth = & $result 'Unauthorized' "Server '$($storedServer.Name)' rejected the credentials. $($test.Error)".Trim()
     }
     else {
-        $script:plexHealth = & $result 'Healthy' "$($test.FriendlyName) ($($test.Version)) at $($test.Uri)"
+        $script:plexHealth = & $result 'Healthy' "$($test.FriendlyName) ($($test.Version)) via server '$($storedServer.Name)'"
     }
 
     return $script:plexHealth

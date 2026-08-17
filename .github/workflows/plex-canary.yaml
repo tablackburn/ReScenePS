@@ -32,14 +32,27 @@ jobs:
       state: ${{ steps.probe.outputs.state }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # This job authenticates its gh calls with an explicit GH_TOKEN and runs
+          # no authenticated git commands.
+          persist-credentials: false
 
       - name: Install PlexAutomationToolkit
         shell: pwsh
         run: |
-          if (-not (Get-Module -Name PlexAutomationToolkit -ListAvailable)) {
+          # Pin to the version build.depend.psd1 declares. Accepting any installed
+          # version, or installing the newest, is what let a developer machine run
+          # 0.11.2 against a 0.6.3 pin -- the probe then depended on a cmdlet CI did
+          # not have, and every Plex test skipped.
+          $required = (Import-PowerShellDataFile -Path build.depend.psd1).PlexAutomationToolkit.Version
+          Write-Host "PlexAutomationToolkit pinned at $required"
+          $installed = Get-Module -Name PlexAutomationToolkit -ListAvailable |
+            Where-Object { $_.Version -eq $required }
+          if (-not $installed) {
             Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-            Install-Module -Name PlexAutomationToolkit -Force -Scope CurrentUser
+            Install-Module -Name PlexAutomationToolkit -RequiredVersion $required -Force -Scope CurrentUser
           }
+          Import-Module -Name PlexAutomationToolkit -RequiredVersion $required -Force -ErrorAction Stop
 
       - name: Probe
         id: probe
