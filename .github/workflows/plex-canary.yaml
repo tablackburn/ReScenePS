@@ -1,0 +1,127 @@
+name: Plex Canary
+
+# The Plex-backed functional tests depend on a personal Plex server and a PAT_TOKEN
+# secret. Tokens are not on a timer -- they are revoked by a password reset or by the
+# server being reclaimed on the account -- so there is nothing to rotate on a schedule,
+# only something to notice. A revoked token previously went undetected for months.
+#
+# CI cannot be the alarm here. A pull request should not go red because a home server is
+# rebooting; that trains people to ignore red builds. So the unit-test workflow skips
+# Plex tests when the server is unreachable, and this job is what chases it instead.
+
+on:
+  schedule:
+    # Weekly, Monday 08:00 UTC. Deliberately infrequent: this watches for a token that
+    # has been revoked, not for momentary downtime.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    name: Probe Plex credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PAT_SERVER_URI: ${{ secrets.PAT_SERVER_URI }}
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+    outputs:
+      state: ${{ steps.probe.outputs.state }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # This job authenticates its gh calls with an explicit GH_TOKEN and runs
+          # no authenticated git commands.
+          persist-credentials: false
+
+      - name: Install PlexAutomationToolkit
+        shell: pwsh
+        run: |
+          # Pin to the version build.depend.psd1 declares. Accepting any installed
+          # version, or installing the newest, is what let a developer machine run
+          # 0.11.2 against a 0.6.3 pin -- the probe then depended on a cmdlet CI did
+          # not have, and every Plex test skipped.
+          $required = (Import-PowerShellDataFile -Path build.depend.psd1).PlexAutomationToolkit.Version
+          Write-Host "PlexAutomationToolkit pinned at $required"
+          $installed = Get-Module -Name PlexAutomationToolkit -ListAvailable |
+            Where-Object { $_.Version -eq $required }
+          if (-not $installed) {
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+            Install-Module -Name PlexAutomationToolkit -RequiredVersion $required -Force -Scope CurrentUser
+          }
+          Import-Module -Name PlexAutomationToolkit -RequiredVersion $required -Force -ErrorAction Stop
+
+      - name: Probe
+        id: probe
+        shell: pwsh
+        run: |
+          Import-Module ./tests/TestHelpers.psm1 -Force
+          $health = Get-PlexHealth
+          # Get-PlexHealth no longer interpolates the server address into Detail; it
+          # names the configured server by its registered name instead. Detail can
+          # still carry an error message produced by PlexAutomationToolkit, which is
+          # not under our control and could embed the address, so it is printed here
+          # (where Actions masks secrets) but never passed to the GitHub API calls
+          # below, which are not masked. This repository is public.
+          Write-Host "Plex health: $($health.State) - $($health.Detail)"
+          "state=$($health.State)" >> $env:GITHUB_OUTPUT
+
+          # NotConfigured is not a failure here -- it means the secrets are absent,
+          # which is a deliberate state, not a broken one.
+          if ($health.State -in @('Unreachable', 'Unauthorized')) {
+            Write-Host "::error::Plex is $($health.State). See the step log for detail."
+            exit 1
+          }
+
+      - name: Open or update the tracking issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ steps.probe.outputs.state }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE="Plex canary: credentials or server unavailable"
+          BODY=$(cat <<EOF
+          The weekly Plex canary could not reach or authenticate to the configured server.
+
+          | | |
+          | --- | --- |
+          | State | \`${STATE:-unknown}\` |
+          | Run | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} |
+
+          The diagnostic detail is deliberately not repeated here. It can include an
+          error message from PlexAutomationToolkit that may embed the server address,
+          which is a secret value, and issue bodies are not masked the way workflow
+          logs are. See the run above for the specifics.
+
+          **Unauthorized** means the server answered and rejected the credentials, so
+          \`PAT_TOKEN\` is wrong or has been revoked. Plex tokens are invalidated by a
+          password reset or by the server being reclaimed on the account. Get a fresh one
+          (any library item -> ⋯ -> Get Info -> View XML, copy \`X-Plex-Token\`) and run:
+
+          \`\`\`
+          gh secret set PAT_TOKEN --repo ${GITHUB_REPOSITORY}
+          \`\`\`
+
+          **Unreachable** means the server did not respond at all — it may simply be down,
+          or \`PAT_SERVER_URI\` may no longer be reachable from GitHub-hosted runners.
+
+          While this is broken, the Plex-backed functional tests skip rather than fail, so
+          pull-request CI stays green and is not covering them.
+          EOF
+          )
+
+          # One issue, updated — not a new one every week.
+          EXISTING=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "Updated issue #$EXISTING"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

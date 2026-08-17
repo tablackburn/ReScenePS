@@ -250,42 +250,150 @@ function New-MinimalSrrFile {
 
 #region Plex Data Source
 
+function Get-PlexHealth {
+    <#
+    .SYNOPSIS
+    Reports whether Plex is usable, distinguishing "not set up" from "broken".
+
+    .DESCRIPTION
+    Test-PlexAvailable used to answer "are credentials present?" when the question
+    callers actually needed answered was "can I use Plex?". Those differ, and the gap
+    between them hid a dead token for months: CI had PAT_SERVER_URI and PAT_TOKEN set,
+    so availability reported true, and the first real call then failed with 401
+    Unauthorized during Pester discovery -- killing the whole container and taking every
+    unrelated test in the file with it. Nothing was reported as missing, because a
+    container that dies during discovery generates no tests at all.
+
+    Four states, because the middle two need opposite handling:
+
+      NotConfigured - no PlexAutomationToolkit, or no credentials anywhere.
+                      Legitimate on a fork or a contributor's machine. Skip quietly.
+      Unreachable   - configured, but the server did not respond. Home infrastructure
+                      reboots; this should not fail somebody's pull request.
+      Unauthorized  - the server answered and rejected the credentials. Unambiguous:
+                      a secret is wrong or revoked. Somebody needs to act.
+      Healthy       - reachable and authenticated.
+
+    Detail deliberately names the configured server by its registered name rather
+    than its URI. The URI is the value of the PAT_SERVER_URI secret, this repository
+    is public, and Actions masks secrets in logs by exact match only -- a trailing
+    slash or a normalised host would defeat it. Note that $test.Error comes from
+    PlexAutomationToolkit and is not under this function's control, so Detail is
+    still treated as untrusted for anything that leaves the runner.
+
+    The result is cached for the session: callers sit in BeforeDiscovery, and a network
+    round trip per call would be paid repeatedly for an answer that cannot change
+    mid-run.
+
+    .OUTPUTS
+    [pscustomobject] with State and Detail properties.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        # Ignore the cached result and probe again.
+        [switch]$Force
+    )
+
+    if ($script:plexHealth -and -not $Force) {
+        return $script:plexHealth
+    }
+
+    $result = { param($State, $Detail) [pscustomobject]@{ State = $State; Detail = $Detail } }
+
+    if (-not (Get-Module -Name 'PlexAutomationToolkit' -ListAvailable)) {
+        $script:plexHealth = & $result 'NotConfigured' 'PlexAutomationToolkit is not installed.'
+        return $script:plexHealth
+    }
+
+    try {
+        Import-Module -Name 'PlexAutomationToolkit' -ErrorAction 'Stop'
+    }
+    catch {
+        $script:plexHealth = & $result 'NotConfigured' "PlexAutomationToolkit could not be imported: $($_.Exception.Message)"
+        return $script:plexHealth
+    }
+
+    # Credentials come from env vars on CI, or a stored default server locally.
+    #
+    # Registration is deliberately gated on actually running in CI, not merely on the
+    # variables being present. Initialize-PlexForCI calls
+    # Add-PatServer -Name CI-Plex -Default -Force, which rewrites the caller's persistent
+    # PlexAutomationToolkit configuration and demotes whatever their default server was.
+    # A health check must not do that: asking a question should not change the answer for
+    # everything else on the machine. An earlier revision of this function did register
+    # unconditionally and left a developer authenticating as CI-Plex with a stale token,
+    # which then looked like a Plex outage.
+    $hasEnvironmentCredentials = [bool]($env:PAT_SERVER_URI -and $env:PAT_TOKEN)
+    # -eq, not [bool]: [bool]'false' is $true in PowerShell, so a machine with
+    # CI=false exported would have had its stored configuration rewritten. The
+    # comparison is case-insensitive by default, which covers CI=True.
+    $isContinuousIntegration = $env:CI -eq 'true'
+
+    if ($hasEnvironmentCredentials -and $isContinuousIntegration) {
+        Initialize-PlexForCI | Out-Null
+    }
+
+    $storedServer = Get-PatStoredServer -Default -ErrorAction 'SilentlyContinue'
+    if (-not $storedServer) {
+        $detail = if ($hasEnvironmentCredentials) {
+            'PAT_SERVER_URI/PAT_TOKEN are set but no server is registered. Registration only happens under CI, so as not to modify a developer machine; run Initialize-PlexForCI explicitly if that is what you want.'
+        }
+        else {
+            'No PAT_SERVER_URI/PAT_TOKEN and no stored default server.'
+        }
+        $script:plexHealth = & $result 'NotConfigured' $detail
+        return $script:plexHealth
+    }
+
+    # Test-PatServer separates "did it respond" from "did it accept us", which is
+    # exactly the distinction that was missing. -Name is mandatory; the registered name
+    # differs by environment ('CI-Plex' from Initialize-PlexForCI, whatever the developer
+    # chose locally), so take it from the stored server rather than hardcoding.
+    try {
+        $test = Test-PatServer -Name $storedServer.Name -ErrorAction 'Stop'
+    }
+    catch [System.Management.Automation.ParameterBindingException] {
+        # A binding error is a defect in this helper, not a sick server. Rethrow rather
+        # than reporting it as 'Unreachable' -- the first draft of this function did
+        # exactly that, and a missing -Name surfaced as a plausible-looking outage.
+        throw
+    }
+    catch {
+        $script:plexHealth = & $result 'Unreachable' "Test-PatServer threw: $($_.Exception.Message)"
+        return $script:plexHealth
+    }
+
+    if (-not $test.IsConnected) {
+        $script:plexHealth = & $result 'Unreachable' "No response from server '$($storedServer.Name)'. $($test.Error)".Trim()
+    }
+    elseif (-not $test.IsAuthenticated) {
+        $script:plexHealth = & $result 'Unauthorized' "Server '$($storedServer.Name)' rejected the credentials. $($test.Error)".Trim()
+    }
+    else {
+        $script:plexHealth = & $result 'Healthy' "$($test.FriendlyName) ($($test.Version)) via server '$($storedServer.Name)'"
+    }
+
+    return $script:plexHealth
+}
+
 function Test-PlexAvailable {
     <#
     .SYNOPSIS
-    Checks if PlexAutomationToolkit is available and configured.
+    Returns true only when Plex is reachable and authenticated.
 
     .DESCRIPTION
-    Returns true if:
-    - PlexAutomationToolkit module is installed, AND
-    - Either PAT_SERVER_URI/PAT_TOKEN env vars are set (CI), OR
-    - A default server is configured (developer machine)
+    Thin wrapper over Get-PlexHealth, kept so existing -Skip: conditions keep working.
+    Note the change in meaning: this used to return true when credentials merely
+    existed, which is why a revoked token looked identical to a working one.
 
     .OUTPUTS
-    [bool] True if Plex is available for use
+    [bool]
     #>
     [CmdletBinding()]
     param()
 
-    # Check if module is available
-    if (-not (Get-Module -Name PlexAutomationToolkit -ListAvailable)) {
-        return $false
-    }
-
-    # Check for CI environment variables
-    if ($env:PAT_SERVER_URI -and $env:PAT_TOKEN) {
-        return $true
-    }
-
-    # Check for stored config
-    try {
-        Import-Module PlexAutomationToolkit -ErrorAction 'Stop'
-        $server = Get-PatStoredServer -Default -ErrorAction 'SilentlyContinue'
-        return $null -ne $server
-    }
-    catch {
-        return $false
-    }
+    return (Get-PlexHealth).State -eq 'Healthy'
 }
 
 function Initialize-PlexForCI {
@@ -460,6 +568,7 @@ Export-ModuleMember -Function @(
     'Remove-TestTempDirectory'
     'New-MinimalSrrFile'
     # Plex data source functions
+    'Get-PlexHealth'
     'Test-PlexAvailable'
     'Initialize-PlexForCI'
     'Get-PlexTestRelease'

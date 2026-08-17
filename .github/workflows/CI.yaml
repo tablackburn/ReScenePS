@@ -67,7 +67,14 @@ jobs:
     # WaitForExit() before draining stdout, so on Windows a HEAD commit message
     # larger than the 4096-byte pipe buffer deadlocks the build with no output
     # at all. Keep merge-commit messages short.
-    timeout-minutes: 15
+    #
+    # 45 rather than the fleet's 15-minute timeout: this repository's functional
+    # tests download real media from a Plex server and ReScene archives (.srr
+    # files) from srrdb, so the job runs an order of magnitude longer than the
+    # others once Plex is reachable. At 15 minutes it was cancelled mid-run at
+    # exactly 15 minutes 3 seconds while the tests were still passing.
+    # Still far below the 6-hour default, which is what the guard is for.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
