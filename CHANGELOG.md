@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `Restore-SrsVideo` could not reconstruct MKV samples. `SourceMkvPath` and
+  `OutputMkvPath` are parameter aliases, not variables, so the MKV branch passed
+  empty strings and failed with "Cannot bind argument to parameter
+  'MainFilePath'". The AVI branch was unaffected. This went unnoticed because the
+  tests covering it had never run.
+
 ## [0.2.3] - 2026-01-11
 
 ### Added
