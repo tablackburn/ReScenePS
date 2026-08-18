@@ -108,10 +108,19 @@ if ($Bootstrap) {
         # is already registered against a different SourceLocation, every dependency in
         # build.depend.psd1 would be installed from it on the strength of the name alone.
         # Refuse rather than trust the name.
-        $expectedSourceLocation = 'https://www.powershellgallery.com/api/v2'
-        $actualSourceLocation = $psGallery.SourceLocation.TrimEnd('/')
-        if ($actualSourceLocation -ne $expectedSourceLocation.TrimEnd('/')) {
-            throw "The repository named 'PSGallery' points at [$actualSourceLocation], not [$expectedSourceLocation]. Refusing to install build dependencies from an unexpected source."
+        # Compare scheme and host rather than the whole string. What identifies the
+        # gallery is the host, and a plain -ne is case-insensitive while -cne would be
+        # wrong in the other direction: host names are case-insensitive by definition,
+        # so -cne would reject https://WWW.PowerShellGallery.com/api/v2, which is the
+        # real gallery. Parsing sidesteps both, and an attacker-controlled repository
+        # would differ by host, which is what this actually checks.
+        $expectedSource = [Uri]'https://www.powershellgallery.com/api/v2'
+        $actualSource = $psGallery.SourceLocation -as [Uri]
+        $sourceIsExpected = $null -ne $actualSource -and
+            $actualSource.Scheme -eq $expectedSource.Scheme -and
+            $actualSource.Host -eq $expectedSource.Host
+        if (-not $sourceIsExpected) {
+            throw "The repository named 'PSGallery' points at [$($psGallery.SourceLocation)], which is not $($expectedSource.Scheme)://$($expectedSource.Host). Refusing to install build dependencies from an unexpected source."
         }
 
         if ($psGallery.InstallationPolicy -ne 'Trusted') {
