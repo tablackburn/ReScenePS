@@ -677,7 +677,9 @@ Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $s
         # ReSample track element id (0x6B75), not from this function's output, so
         # this compares the EBML walk against something that does not share its
         # code.
-        It 'Returns the expected number of tracks' -Skip:(-not $_.ExpectedTracks) {
+        # $null rather than -not: an ExpectedSampleTracks of 0 is a broken config
+        # entry, and -not would skip it silently instead of failing on it.
+        It 'Returns the expected number of tracks' -Skip:($null -eq $_.ExpectedTracks) {
             $script:metadata.Tracks.Count | Should -Be $sample.ExpectedTracks
         }
 
