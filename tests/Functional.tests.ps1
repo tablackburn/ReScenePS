@@ -91,12 +91,44 @@ BeforeDiscovery {
                     ExpectedRarCount     = $test.ExpectedRarCount
                     CreatingApplication  = $test.CreatingApplication
                     SampleType           = $test.SampleType
+                    ExpectedSampleTracks = $test.ExpectedSampleTracks
                 }
             } else {
                 Write-Warning "SRR file not found: $fullPath"
                 $null
             }
         } | Where-Object { $_ -ne $null })
+
+        # Derive the SRS sample tests from the SRR parsing tests, as
+        # TestConfig.Example.psd1 has always said they would be ("dynamically
+        # populated ... where SampleType = 'MKV'"). Nothing ever populated
+        # $script:srsSampleTests, so both SRS Describe blocks below have skipped on
+        # an empty collection since they were written and have never once run.
+        #
+        # There is no path to an .srs on disk to point at: the sample is stored
+        # *inside* the .srr, so each entry records the archive and the name of the
+        # member to pull out of it, and the Context BeforeAll extracts it.
+        #
+        # MKV only, because ConvertFrom-SrsFileMetadata is documented as EBML-only.
+        # See the SampleType note in TestConfig.psd1 for the other two containers.
+        $script:srsSampleTests = @($script:srrParsingTests | ForEach-Object {
+            $test = $_
+            if ($test.SampleType -ne 'MKV') {
+                return
+            }
+
+            $storedSrs = @($test.ExpectedStoredFiles) -match '\.srs$' | Select-Object -First 1
+            if (-not $storedSrs) {
+                return
+            }
+
+            @{
+                Name           = Split-Path -Leaf $storedSrs
+                SrrPath        = $test.FullPath
+                StoredSrs      = $storedSrs
+                ExpectedTracks = $test.ExpectedSampleTracks
+            }
+        })
 
         # Plex-based tests are discovered dynamically at runtime (in BeforeAll)
         # Set placeholder for test discovery - actual releases come from playlist
@@ -597,11 +629,31 @@ Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $s
     Context 'Parsing <_.Name>' -ForEach $script:srsSampleTests -AllowNullOrEmptyForEach {
 
         BeforeAll {
-            $srsPath = $_.SrsPath
-            $expectedTracks = $_.ExpectedTracks
-            $expectedOriginalSize = $_.ExpectedOriginalSize
+            $sample = $_
 
-            $script:metadata = ConvertFrom-SrsFileMetadata -SrsFilePath $srsPath
+            # The .srs is stored inside the .srr, so extract it first.
+            # Export-StoredFile is private; reach into the module the same way the
+            # tests under tests/Private do.
+            $script:srsPath = Join-Path -Path $script:tempDir -ChildPath $sample.Name
+            InModuleScope 'ReScenePS' -Parameters @{
+                srr    = $sample.SrrPath
+                member = $sample.StoredSrs
+                dest   = $script:srsPath
+            } {
+                Export-StoredFile -SrrFile $srr -FileName $member -OutputPath $dest
+            }
+
+            $script:metadata = ConvertFrom-SrsFileMetadata -SrsFilePath $script:srsPath
+        }
+
+        AfterAll {
+            if ($script:srsPath -and (Test-Path -Path $script:srsPath)) {
+                Remove-Item -Path $script:srsPath -Force -ErrorAction 'SilentlyContinue'
+            }
+        }
+
+        It 'Extracts the stored SRS from the SRR' {
+            $script:srsPath | Should -Exist
         }
 
         It 'Parses SRS file without errors' {
@@ -616,8 +668,23 @@ Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $s
             $script:metadata.FileData.SampleName | Should -Not -BeNullOrEmpty
         }
 
-        It 'Returns expected number of tracks (<expectedTracks>)' -Skip:(-not $expectedTracks) {
-            $script:metadata.Tracks.Count | Should -Be $expectedTracks
+        # -Skip: is evaluated during discovery, so it can only read the -ForEach
+        # data. $expectedTracks was assigned in BeforeAll, which does not run until
+        # execution, so the old condition saw $null and would have skipped this
+        # unconditionally had the block ever run.
+        #
+        # The counts in TestConfig.psd1 were taken from a raw byte scan for the
+        # ReSample track element id (0x6B75), not from this function's output, so
+        # this compares the EBML walk against something that does not share its
+        # code.
+        It 'Returns the expected number of tracks' -Skip:(-not $_.ExpectedTracks) {
+            $script:metadata.Tracks.Count | Should -Be $sample.ExpectedTracks
+        }
+
+        # Without this the loop below passes vacuously on a sample that parsed to
+        # zero tracks, which is exactly the failure it exists to catch.
+        It 'Returns at least one track' {
+            $script:metadata.Tracks.Count | Should -BeGreaterThan 0
         }
 
         It 'Tracks have valid MatchOffset and DataLength' {
@@ -629,30 +696,160 @@ Describe 'ConvertFrom-SrsFileMetadata' -Skip:($script:skipFunctionalTests -or $s
     }
 }
 
-Describe 'Restore-SrsVideo' -Skip:($script:skipFunctionalTests -or $script:srsSampleTests.Count -eq 0) {
+# Restore-SrsVideo rebuilds the sample from the release's own source video, so
+# unlike the parsing tests above it cannot be driven from tests/samples -- those
+# ship the .srr and nothing else. The Plex playlist is the only source of real
+# media here, so this reuses the releases the Restore-Release tests below use.
+Describe 'Restore-SrsVideo' -Skip:(-not $script:plexEnabled) {
 
-    Context 'Reconstructing <_.Name>' -ForEach $script:srsSampleTests -AllowNullOrEmptyForEach {
+    Context 'Reconstructing the sample for <_.ReleaseName>' -ForEach $script:plexReleases -AllowNullOrEmptyForEach {
 
         BeforeAll {
-            $sample = $_
-            $outputName = [System.IO.Path]::ChangeExtension((Split-Path -Leaf $sample.SrsPath), '.mkv')
+            $release = $_
+            $script:srsPath = $null
+            $script:sourcePath = $null
+            $script:outputPath = $null
+            $script:expectedSize = 0
+            $script:expectedCrc32 = $null
+            $script:setupSkipReason = $null
+
+            # Get-PlexTestRelease runs once in BeforeDiscovery and again in the
+            # file-level BeforeAll, so the SrrPath added to the release objects
+            # there was added to a different set of objects than the ones -ForEach
+            # bound here. Locate the downloaded SRR by name instead of reading a
+            # property off $_ that will always be null.
+            #
+            # -eq rather than Get-ChildItem -Filter: -Filter is case-sensitive on
+            # Linux, and the name on disk is whatever case srrdb returned.
+            $srrFile = $null
+            if ($script:srrDir) {
+                $srrFile = Get-ChildItem -Path $script:srrDir -File -ErrorAction 'SilentlyContinue' |
+                    Where-Object { $_.Name -eq "$($release.ReleaseName).srr" } |
+                    Select-Object -First 1
+            }
+
+            if (-not $srrFile) {
+                $script:setupSkipReason = "no SRR was downloaded for $($release.ReleaseName)"
+                return
+            }
+
+            # Not every release ships a sample. One that does not has no .srs to
+            # reconstruct from, which is a property of the release rather than a
+            # failure of the module.
+            $storedSrs = @(Get-SrrBlock -SrrFile $srrFile.FullName |
+                Where-Object { $_.GetType().Name -eq 'SrrStoredFileBlock' -and $_.FileName -like '*.srs' } |
+                Select-Object -First 1)
+
+            if ($storedSrs.Count -eq 0) {
+                $script:setupSkipReason = "$($release.ReleaseName) stores no .srs sample"
+                return
+            }
+
+            $srsMember = $storedSrs[0].FileName
+            $script:srsPath = Join-Path -Path $script:tempDir -ChildPath (Split-Path -Leaf $srsMember)
+            InModuleScope 'ReScenePS' -Parameters @{
+                srr    = $srrFile.FullName
+                member = $srsMember
+                dest   = $script:srsPath
+            } {
+                Export-StoredFile -SrrFile $srr -FileName $member -OutputPath $dest
+            }
+
+            # Restore-SrsVideo dispatches on the container and only handles EBML and
+            # RIFF; anything else it warns about and returns $false for. Naming that
+            # here keeps an unsupported container reported as unsupported rather than
+            # as a reconstruction failure.
+            $srsType = (InModuleScope 'ReScenePS' -Parameters @{ path = $script:srsPath } {
+                Get-SrsInfo -FilePath $path
+            }).Type
+
+            if ($srsType -notmatch 'EBML|RIFF') {
+                $script:setupSkipReason = "the sample for $($release.ReleaseName) is $srsType, which Restore-SrsVideo does not support"
+                return
+            }
+
+            # The SRS records the original sample's size and CRC32. Both parsers
+            # expose them, under different names.
+            $fileData = if ($srsType -match 'EBML') {
+                $metadata = ConvertFrom-SrsFileMetadata -SrsFilePath $script:srsPath
+                @{ Size = $metadata.FileData.OriginalSize; Crc32 = $metadata.FileData.CRC32 }
+            }
+            else {
+                $avi = InModuleScope 'ReScenePS' -Parameters @{ path = $script:srsPath } {
+                    ConvertFrom-SrsAviFile -FilePath $path
+                }
+                @{ Size = $avi.FileMetadata.FileSize; Crc32 = $avi.FileMetadata.Crc32 }
+            }
+            $script:expectedSize = [uint64]$fileData.Size
+            $script:expectedCrc32 = [uint32]$fileData.Crc32
+
+            $script:sourcePath = InModuleScope 'ReScenePS' -Parameters @{
+                name = $release.FileName
+                dir  = $script:plexSourceDir
+                size = [uint64]$release.FileSize
+            } {
+                Find-SourceFile -FileName $name -SearchPath $dir -ExpectedSize $size
+            }
+
+            if (-not $script:sourcePath) {
+                $script:setupSkipReason = "the source video for $($release.ReleaseName) was not downloaded from Plex"
+                return
+            }
+
+            # The sample shares the release's container, and the .srs name does not
+            # record it, so take the extension from the source file.
+            $sourceExtension = [System.IO.Path]::GetExtension($release.FileName)
+            $outputName = [System.IO.Path]::GetFileNameWithoutExtension($script:srsPath) + $sourceExtension
             $script:outputPath = Join-Path -Path $script:tempDir -ChildPath $outputName
         }
 
-        It 'Reconstructs sample MKV successfully' {
-            $result = Restore-SrsVideo -SrsFilePath $sample.SrsPath -SourceMkvPath $sample.SourceMkvPath -OutputMkvPath $script:outputPath
-            $result | Should -Be $true
+        It 'Reconstructs the sample from the source video' {
+            if ($script:setupSkipReason) {
+                Set-ItResult -Skipped -Because $script:setupSkipReason
+            }
+
+            $restoreParameters = @{
+                SrsFilePath   = $script:srsPath
+                SourceMkvPath = $script:sourcePath
+                OutputMkvPath = $script:outputPath
+            }
+            Restore-SrsVideo @restoreParameters | Should -BeTrue
             $script:outputPath | Should -Exist
         }
 
-        It 'Reconstructed file has expected size' -Skip:(-not $_.ExpectedOriginalSize) {
-            $actualSize = (Get-Item -Path $script:outputPath).Length
-            $actualSize | Should -Be $_.ExpectedOriginalSize
+        It 'Reconstructs the sample at its original size' {
+            if ($script:setupSkipReason) {
+                Set-ItResult -Skipped -Because $script:setupSkipReason
+            }
+
+            # Checked against the size recorded in the SRS rather than a number
+            # written down in TestConfig.psd1. Restore-SrsVideo builds the output
+            # from the track offsets and lengths, never from this field, so the two
+            # agreeing means the extraction and remux produced the original byte
+            # count -- it is not the function checking its own arithmetic.
+            $script:expectedSize | Should -BeGreaterThan 0
+            (Get-Item -Path $script:outputPath).Length | Should -Be $script:expectedSize
+        }
+
+        It 'Reconstructs the sample byte for byte' {
+            if ($script:setupSkipReason) {
+                Set-ItResult -Skipped -Because $script:setupSkipReason
+            }
+
+            # The point of the whole exercise. Restore-SrsVideo returns $true once
+            # it has written a file and never verifies the result, so without this
+            # the tests above would accept a corrupt sample of the right length.
+            $actualCrc32 = InModuleScope 'ReScenePS' -Parameters @{ path = $script:outputPath } {
+                Get-Crc32 -FilePath $path
+            }
+            $actualCrc32 | Should -Be $script:expectedCrc32
         }
 
         AfterAll {
-            if ($script:outputPath -and (Test-Path -Path $script:outputPath)) {
-                Remove-Item -Path $script:outputPath -Force -ErrorAction 'SilentlyContinue'
+            foreach ($path in @($script:outputPath, $script:srsPath)) {
+                if ($path -and (Test-Path -Path $path)) {
+                    Remove-Item -Path $path -Force -ErrorAction 'SilentlyContinue'
+                }
             }
         }
     }

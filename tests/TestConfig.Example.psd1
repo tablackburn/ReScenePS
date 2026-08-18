@@ -69,8 +69,19 @@
             ExpectedRarCount     = 20
             CreatingApplication  = 'pyReScene Auto 0.5'
 
-            # Container type: 'MKV' or 'AVI'
+            # Container of the .srs stored inside the .srr, which is not always
+            # the container of the release. 'MKV' (EBML), 'AVI' (RIFF) or 'M2TS'
+            # (STRM). This selects which functions the sample is fed to, so it
+            # has to name the real format -- a BluRay release whose sample is
+            # .m2ts is 'M2TS', not 'MKV'.
             SampleType           = 'MKV'
+
+            # Optional. Number of tracks in the stored sample. Only read for
+            # SampleType 'MKV'; it drives the ConvertFrom-SrsFileMetadata tests.
+            # Take it from a raw scan for the ReSample track element id (0x6B75)
+            # rather than from ConvertFrom-SrsFileMetadata's own output, so the
+            # test compares the parser against something independent of it.
+            ExpectedSampleTracks = 2
         }
     )
 
@@ -135,19 +146,22 @@
 
     # ==========================================================================
     # SRS SAMPLE RECONSTRUCTION TESTS
-    # These test ConvertFrom-SrsFileMetadata, Build-SampleMkvFromSrs, Restore-SrsVideo
-    # Requires: SRS file (extracted from SRR) + source MKV (extracted from release RARs)
+    # These test ConvertFrom-SrsFileMetadata and Restore-SrsVideo. There is no
+    # section for them here, because there is nothing to configure:
+    #
+    #   ConvertFrom-SrsFileMetadata runs against every SrrParsingTests entry
+    #   above whose SampleType is 'MKV'. The .srs is stored inside the .srr, so
+    #   the tests extract it rather than taking a path to one.
+    #
+    #   Restore-SrsVideo needs the release's source video as well, which only
+    #   the Plex data source below supplies, so it runs against the releases in
+    #   the playlist and skips with a reason when one has no sample.
+    #
+    # This replaces an SrsSampleTests key that nothing ever read. It was meant to
+    # be "dynamically populated ... where SampleType = 'MKV'"; that never
+    # happened, so both Describe blocks sat behind an empty collection and never
+    # ran once.
     # ==========================================================================
-    SrsSampleTests = @(
-        # MKV sample tests - will be dynamically populated from SrrReconstructionTests
-        # where SampleType = 'MKV', or define explicitly:
-        # @{
-        #     SrsPath          = 'path\to\sample.srs'
-        #     SourceMkvPath    = 'path\to\source.mkv'
-        #     ExpectedTracks   = 2
-        #     ExpectedSize     = 52428800
-        # }
-    )
 
     # ==========================================================================
     # NETWORK PATHS (for reference)
