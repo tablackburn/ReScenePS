@@ -785,12 +785,24 @@ Describe 'Restore-SrsVideo' -Skip:(-not $script:plexEnabled) {
             $script:expectedSize = [uint64]$fileData.Size
             $script:expectedCrc32 = [uint32]$fileData.Crc32
 
-            $script:sourcePath = InModuleScope 'ReScenePS' -Parameters @{
-                name = $release.FileName
-                dir  = $script:plexSourceDir
-                size = [uint64]$release.FileSize
-            } {
-                Find-SourceFile -FileName $name -SearchPath $dir -ExpectedSize $size
+            # Locate the source the same way the reconstruction tests above do.
+            # Find-SourceFile is no use here: Sync-PatMedia does not preserve the
+            # server-side file name, so matching on $release.FileName finds nothing
+            # and every case skipped as "not downloaded" on the first CI run.
+            # Match on container and size instead.
+            $sourceExtension = [System.IO.Path]::GetExtension($release.FileName)
+            $candidates = @(Get-ChildItem -Path $script:plexSourceDir -Recurse -File -ErrorAction 'SilentlyContinue' |
+                Where-Object { $_.Extension -eq $sourceExtension })
+            $bySize = @($candidates | Where-Object { $_.Length -eq $release.FileSize })
+
+            $script:sourcePath = if ($bySize.Count -ge 1) {
+                $bySize[0].FullName
+            }
+            elseif ($candidates.Count -eq 1) {
+                $candidates[0].FullName
+            }
+            else {
+                $null
             }
 
             if (-not $script:sourcePath) {
@@ -798,9 +810,23 @@ Describe 'Restore-SrsVideo' -Skip:(-not $script:plexEnabled) {
                 return
             }
 
+            # Reconstruction copies byte ranges out of the source at the offsets the
+            # SRS recorded, so it only means anything if the source is the scene
+            # release itself. The SRR records the released file's unpacked size;
+            # when the local copy is a different encode the sizes disagree and the
+            # run would produce a wrong sample rather than a failure worth reading.
+            $mainFile = Get-SrrBlock -SrrFile $srrFile.FullName |
+                Where-Object { $_.GetType().Name -eq 'RarPackedFileBlock' -and $_.FileName -match '\.(mkv|avi|mp4|m2ts)$' } |
+                Sort-Object -Property 'UnpackedSize' -Descending |
+                Select-Object -First 1
+
+            if ($mainFile -and $mainFile.UnpackedSize -ne (Get-Item -Path $script:sourcePath).Length) {
+                $script:setupSkipReason = "the Plex copy of $($release.ReleaseName) is not the scene release (its size differs from the one the SRR records)"
+                return
+            }
+
             # The sample shares the release's container, and the .srs name does not
             # record it, so take the extension from the source file.
-            $sourceExtension = [System.IO.Path]::GetExtension($release.FileName)
             $outputName = [System.IO.Path]::GetFileNameWithoutExtension($script:srsPath) + $sourceExtension
             $script:outputPath = Join-Path -Path $script:tempDir -ChildPath $outputName
         }
