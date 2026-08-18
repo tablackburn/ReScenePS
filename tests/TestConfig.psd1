@@ -6,6 +6,20 @@
     # SRR PARSING TESTS (no source files needed)
     # These test Get-SrrBlock and Show-SrrInfo using pre-downloaded SRR files
     # in tests/samples/. Organized by release type for comprehensive coverage.
+    #
+    # SampleType is the container of the .srs stored inside the .srr, which is
+    # not always the container of the release itself. It selects which functions
+    # each sample is fed to, so it has to name the real format:
+    #
+    #   MKV  - EBML. ConvertFrom-SrsFileMetadata parses these.
+    #   AVI  - RIFF. Restore-SrsVideo routes these to ConvertFrom-SrsAviFile,
+    #          which reads SRSF/SRST chunks instead. Passing one to
+    #          ConvertFrom-SrsFileMetadata is out of contract; it is documented
+    #          as EBML-only and fails with an index-out-of-bounds error.
+    #   M2TS - STRM ("Stream (Generic)" per Get-SrsInfo). Unsupported by both.
+    #          The three COMPLETE BLURAY releases below are the case that makes
+    #          this distinction matter: the releases are BluRay, but their
+    #          samples are .m2ts, and they were previously labelled MKV.
     # ==========================================================================
     SrrParsingTests = @(
         # ------------------------------------------------------------------
@@ -34,6 +48,7 @@
             ExpectedRarCount     = 33
             CreatingApplication  = 'pyReScene Auto 0.5'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 2
         }
 
         # ------------------------------------------------------------------
@@ -48,6 +63,7 @@
             ExpectedRarCount     = 71
             CreatingApplication  = 'ReScene .NET 1.2'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 2
         }
 
         # ------------------------------------------------------------------
@@ -62,6 +78,7 @@
             ExpectedRarCount     = 59
             CreatingApplication  = 'pyReScene Auto 0.5'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 4
         }
 
         # ------------------------------------------------------------------
@@ -76,6 +93,7 @@
             ExpectedRarCount     = 91
             CreatingApplication  = 'pyReScene Auto 0.7'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 6
         }
 
         # ------------------------------------------------------------------
@@ -89,7 +107,7 @@
             ExpectedStoredFiles  = @('lazers-skyfall.nfo', 'Sample/lazers-skyfall.sample.srs', 'lazers-skyfall.sfv')
             ExpectedRarCount     = 98
             CreatingApplication  = 'pyReScene 0.1'
-            SampleType           = 'MKV'
+            SampleType           = 'M2TS'
         }
         @{
             Path                 = 'tests\samples\Serenity.2005.COMPLETE.BLURAY-WHiZZ.srr'
@@ -99,7 +117,7 @@
             ExpectedStoredFiles  = @('serenity.2005.complete.bluray-whizz.nfo', 'Proof/proof-serenity.2005.complete.bluray-whizz.jpg', 'Sample/sample-serenity.2005.complete.bluray-whizz.srs', 'serenity.2005.complete.bluray-whizz.sfv')
             ExpectedRarCount     = 84
             CreatingApplication  = 'pyReScene Auto 0.5'
-            SampleType           = 'MKV'
+            SampleType           = 'M2TS'
         }
         @{
             Path                 = 'tests\samples\Iron.Man.3.2013.COMPLETE.BluRay-TRUEDEF.srr'
@@ -109,7 +127,7 @@
             ExpectedStoredFiles  = @('truedef-ironmanlegit.nfo', 'Proof/truedef-ironmanlegit-proof.jpg', 'Sample/trudef-ironman3legit-sample.srs', 'truedef-ironmanlegit.sfv')
             ExpectedRarCount     = 93
             CreatingApplication  = 'pyReScene Auto 0.5'
-            SampleType           = 'MKV'
+            SampleType           = 'M2TS'
         }
 
         # ------------------------------------------------------------------
@@ -138,6 +156,7 @@
             ExpectedRarCount     = 24
             CreatingApplication  = 'pyReScene Auto 0.5'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 2
         }
 
         # ------------------------------------------------------------------
@@ -152,6 +171,7 @@
             ExpectedRarCount     = 57
             CreatingApplication  = 'ReScene .NET Beta 11'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 3
         }
 
         # ------------------------------------------------------------------
@@ -166,6 +186,7 @@
             ExpectedRarCount     = 48
             CreatingApplication  = 'ReScene .NET 1.2'
             SampleType           = 'MKV'
+            ExpectedSampleTracks = 3
         }
     )
 
