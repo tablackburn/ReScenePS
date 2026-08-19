@@ -107,7 +107,7 @@ function Restore-SrsVideo {
         if ($tracksForExtraction.Count -gt 0) {
             # Use MKV-aware extraction that properly handles interleaved track data
             $extracted = Export-MkvTrackData `
-                -MainFilePath $SourceMkvPath `
+                -MainFilePath $SourcePath `
                 -Tracks $tracksForExtraction `
                 -OutputFiles $trackDataFiles
 
@@ -130,10 +130,10 @@ function Restore-SrsVideo {
         $rebuilt = Build-SampleMkvFromSrs `
             -SrsFilePath $SrsFilePath `
             -TrackDataFiles $trackDataFiles `
-            -OutputMkvPath $OutputMkvPath
+            -OutputMkvPath $OutputPath
 
         if ($rebuilt) {
-            Write-Host "  [OK] Reconstructed video sample: $(Split-Path $OutputMkvPath -Leaf)" -ForegroundColor Green
+            Write-Host "  [OK] Reconstructed video sample: $(Split-Path $OutputPath -Leaf)" -ForegroundColor Green
 
             # Cleanup temp track files
             foreach ($tempFile in $trackDataFiles.Values) {
