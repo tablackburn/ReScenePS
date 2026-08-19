@@ -1,0 +1,45 @@
+{
+  "version": "latest",
+  "modules": {
+    "include": [
+      "agent-workflow",
+      "shorthand",
+      "update",
+      "powershell",
+      "testing",
+      "git-workflow",
+      "github-cli",
+      "contributing",
+      "markdown",
+      "readme",
+      "releases"
+    ],
+    "exclude": []
+  },
+  "externalSources": {
+    "enabled": false,
+    "repositories": []
+  },
+  "skills": {
+    "enabled": true,
+    "vendorPath": ".agents/skills",
+    "dependencies": [
+      {
+        "name": "psake",
+        "source": "psake/psake-llm-tools",
+        "path": "plugins/psake/skills/psake",
+        "version": "v2.2.0",
+        "format": "skill-md",
+        "description": "psake build authoring and patterns (Agent Skill, agentskills.io)"
+      },
+      {
+        "name": "powershellbuild",
+        "source": "psake/psake-llm-tools",
+        "path": "plugins/powershellbuild/skills/powershellbuild",
+        "version": "v2.2.0",
+        "format": "skill-md",
+        "description": "PowerShell module build/test/publish via PowerShellBuild (Agent Skill)"
+      }
+    ]
+  }
+}
