@@ -224,6 +224,156 @@ Describe 'Restore-SrsVideo' {
         }
     }
 
+    Context 'Output verification' {
+        # Nothing here is mocked. A synthetic EBML SRS is parsed by the real parser and
+        # rebuilt by the real rebuilder; the two rejection paths are reached by giving
+        # the SRS recorded values that disagree with what that rebuild produces. That is
+        # the only side of the comparison a test can move without a mock, and it is the
+        # comparison itself -- plus the discard and the warning -- that went untested.
+        BeforeAll {
+            function Build-VerificationSrsFile {
+                <#
+                .SYNOPSIS
+                    Build a minimal EBML SRS recording a given original size and CRC32.
+
+                .DESCRIPTION
+                    Mirrors the layout of a real SRS:
+
+                        EBML header element    copied verbatim into the rebuild
+                        Segment (container)    only its header is copied
+                          ReSample (container) dropped from the rebuild entirely
+                            ResampleFile       carries the recorded size and CRC32
+
+                    There are no tracks, so the rebuild is exactly the EBML header
+                    element followed by the Segment header. Those bytes are returned so
+                    a caller can state the size and checksum a correct rebuild has.
+                    They do not depend on the recorded values, which the rebuild never
+                    reads.
+
+                .PARAMETER Path
+                    Path to write the SRS file to.
+
+                .PARAMETER RecordedSize
+                    Original sample size to record in the ResampleFile element.
+
+                .PARAMETER RecordedCrc32
+                    Original sample CRC32 to record in the ResampleFile element.
+                #>
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Path,
+
+                    [Parameter(Mandatory)]
+                    [uint64]$RecordedSize,
+
+                    [Parameter(Mandatory)]
+                    [uint32]$RecordedCrc32
+                )
+
+                $applicationName = [System.Text.Encoding]::UTF8.GetBytes('ReScenePS-Test')
+                $sampleName = [System.Text.Encoding]::UTF8.GetBytes('sample.mkv')
+
+                $fileDataStream = [System.IO.MemoryStream]::new()
+                $fileDataWriter = [System.IO.BinaryWriter]::new($fileDataStream)
+                try {
+                    $fileDataWriter.Write([uint16]0x0000)  # Flags
+                    $fileDataWriter.Write([uint16]$applicationName.Length)
+                    $fileDataWriter.Write($applicationName)
+                    $fileDataWriter.Write([uint16]$sampleName.Length)
+                    $fileDataWriter.Write($sampleName)
+                    $fileDataWriter.Write([uint64]$RecordedSize)
+                    $fileDataWriter.Write([uint32]$RecordedCrc32)
+                    $fileDataWriter.Flush()
+                    $fileData = $fileDataStream.ToArray()
+                }
+                finally {
+                    $fileDataWriter.Dispose()
+                    $fileDataStream.Dispose()
+                }
+
+                $resampleFileElement = [byte[]]@(0x6A, 0x75) + [byte](0x80 + $fileData.Length) + $fileData
+                $resampleElement = [byte[]]@(0x1F, 0x69, 0x75, 0x76) + [byte](0x80 + $resampleFileElement.Length) + $resampleFileElement
+                $ebmlHeaderElement = [byte[]]@(0x1A, 0x45, 0xDF, 0xA3, 0x84, 0x42, 0x86, 0x81, 0x01)
+                $segmentHeader = [byte[]]@(0x18, 0x53, 0x80, 0x67) + [byte](0x80 + $resampleElement.Length)
+
+                [System.IO.File]::WriteAllBytes($Path, $ebmlHeaderElement + $segmentHeader + $resampleElement)
+
+                return [byte[]]($ebmlHeaderElement + $segmentHeader)
+            }
+
+            # No tracks are extracted from it, so its contents do not matter; it only
+            # has to exist for the source-video check to pass.
+            $script:verificationSource = Join-Path $script:tempDir 'verification_source.mkv'
+            [System.IO.File]::WriteAllBytes($script:verificationSource, [byte[]]::new(1000))
+
+            $probeSrs = Join-Path $script:tempDir 'verification_probe.srs'
+            $expectedRebuild = Build-VerificationSrsFile -Path $probeSrs -RecordedSize 0 -RecordedCrc32 0
+
+            $expectedRebuildPath = Join-Path $script:tempDir 'verification_expected.bin'
+            [System.IO.File]::WriteAllBytes($expectedRebuildPath, $expectedRebuild)
+
+            $script:expectedRebuildSize = $expectedRebuild.Length
+            $script:expectedRebuildCrc32 = InModuleScope 'ReScenePS' -Parameters @{ path = $expectedRebuildPath } {
+                Get-Crc32 -FilePath $path
+            }
+
+            # Every bit flipped, so it cannot collide with the real checksum however
+            # the rebuild changes.
+            $script:wrongCrc32 = [uint32]($script:expectedRebuildCrc32 -bxor [uint32]::MaxValue)
+
+            # Not the size of this rebuild. It is the size of the sample the check was
+            # added for -- ten megabytes, of which the rebuild wrote 52,755 bytes and
+            # reported success.
+            $script:wrongSize = [uint64]10123431
+
+            $script:sizeMismatchSrs = Join-Path $script:tempDir 'size_mismatch.srs'
+            $null = Build-VerificationSrsFile -Path $script:sizeMismatchSrs -RecordedSize $script:wrongSize -RecordedCrc32 $script:wrongCrc32
+
+            $script:crcMismatchSrs = Join-Path $script:tempDir 'crc_mismatch.srs'
+            $null = Build-VerificationSrsFile -Path $script:crcMismatchSrs -RecordedSize ([uint64]$script:expectedRebuildSize) -RecordedCrc32 $script:wrongCrc32
+
+            $script:matchingSrs = Join-Path $script:tempDir 'matching.srs'
+            $null = Build-VerificationSrsFile -Path $script:matchingSrs -RecordedSize ([uint64]$script:expectedRebuildSize) -RecordedCrc32 $script:expectedRebuildCrc32
+        }
+
+        It 'Rejects a rebuild whose size does not match the size the SRS records' {
+            $outputPath = Join-Path $script:tempDir 'size_mismatch_output.mkv'
+            $warnings = @()
+
+            $result = Restore-SrsVideo -SrsFilePath $script:sizeMismatchSrs -SourcePath $script:verificationSource -OutputPath $outputPath -WarningVariable 'warnings' -WarningAction 'SilentlyContinue'
+
+            $result | Should -BeFalse -Because 'a sample of the wrong size is not a successful reconstruction'
+            Test-Path -Path $outputPath | Should -BeFalse -Because 'a rejected sample must not be left on disk to be mistaken for a good one'
+            ($warnings -join "`n") | Should -BeLike "*Reconstructed sample is $script:expectedRebuildSize bytes but the SRS records $script:wrongSize*" -Because 'the warning has to name both sizes to be actionable'
+        }
+
+        It 'Rejects a rebuild whose CRC32 does not match the CRC32 the SRS records' {
+            $outputPath = Join-Path $script:tempDir 'crc_mismatch_output.mkv'
+            $recordedCrc32Text = '0x{0:X8}' -f $script:wrongCrc32
+            $rebuiltCrc32Text = '0x{0:X8}' -f $script:expectedRebuildCrc32
+            $warnings = @()
+
+            $result = Restore-SrsVideo -SrsFilePath $script:crcMismatchSrs -SourcePath $script:verificationSource -OutputPath $outputPath -WarningVariable 'warnings' -WarningAction 'SilentlyContinue'
+
+            $result | Should -BeFalse -Because 'the right number of the wrong bytes is not a successful reconstruction'
+            Test-Path -Path $outputPath | Should -BeFalse -Because 'a rejected sample must not be left on disk to be mistaken for a good one'
+            ($warnings -join "`n") | Should -BeLike "*Reconstructed sample CRC32 is $rebuiltCrc32Text but the SRS records $recordedCrc32Text*" -Because 'the warning has to name both checksums to be actionable'
+        }
+
+        It 'Accepts a rebuild matching both the size and the CRC32 the SRS records' {
+            # Without this, both tests above would still pass against a check that
+            # rejected everything.
+            $outputPath = Join-Path $script:tempDir 'matching_output.mkv'
+            $warnings = @()
+
+            $result = Restore-SrsVideo -SrsFilePath $script:matchingSrs -SourcePath $script:verificationSource -OutputPath $outputPath -WarningVariable 'warnings' -WarningAction 'SilentlyContinue'
+
+            $result | Should -BeTrue
+            Test-Path -Path $outputPath | Should -BeTrue
+            $warnings | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'No tracks case' {
         BeforeAll {
             # Create EBML SRS with FileData but no tracks
