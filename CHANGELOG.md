@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
+- `Restore-SrsVideo` reconstructed the wrong footage for AVI samples whose SRS
+  records a match offset of 0. Those files store 256 signature bytes per track so
+  the position can be found in the source; the rebuild ignored them and copied
+  from the start of the video instead, producing a sample of exactly the right
+  length made of the wrong content. AVI samples that record a real offset were
+  unaffected.
+
 - `Restore-SrsVideo` produced a truncated MKV sample and reported success. An SRS
   stores each block's header and original size but not the frame data, so the
   rebuild consumed bytes that were not there, ran past the end of the SRS after

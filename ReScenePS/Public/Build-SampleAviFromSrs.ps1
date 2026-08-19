@@ -63,12 +63,78 @@ function Build-SampleAviFromSrs {
     Write-Verbose "Parsing source AVI movi structure..."
     $sourceChunks = Get-AviMoviChunks -FilePath $SourcePath
 
+    # Resolve where each track's data actually starts in the source.
+    #
+    # Most SRS files record a real MatchOffset and this is a no-op. Some record 0
+    # for every track and store 256 signature bytes instead -- the opening bytes of
+    # that track's data in the sample -- which is what they are for: the position
+    # has to be found by matching them against the source.
+    #
+    # Taking the recorded 0 at face value copied from the very start of the film,
+    # which produced a sample of exactly the right length made of the wrong footage.
+    # Being the right size, it passed every check the rebuild made, and only a CRC32
+    # comparison against the SRS exposed it.
+    $resolvedOffset = @{}
+    foreach ($trackNum in $srsInfo.Tracks.Keys) {
+        $track = $srsInfo.Tracks[$trackNum]
+        $resolvedOffset[$trackNum] = [long]$track.MatchOffset
+
+        if ($track.MatchOffset -ne 0) {
+            continue
+        }
+
+        $signature = $track.SignatureBytes
+        if ($null -eq $signature -or $signature.Count -eq 0) {
+            Write-Verbose "  Track $trackNum : match offset 0 and no signature bytes; using offset 0."
+            continue
+        }
+
+        $candidates = @($sourceChunks | Where-Object { $_.StreamNum -eq $trackNum } | Sort-Object 'DataOffset')
+        $found = $false
+        $searchStream = [System.IO.File]::OpenRead($SourcePath)
+        try {
+            $window = New-Object byte[] $signature.Count
+            foreach ($chunk in $candidates) {
+                if ($chunk.Size -lt $signature.Count) {
+                    continue
+                }
+
+                $searchStream.Seek([long]$chunk.DataOffset, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $filled = 0
+                while ($filled -lt $window.Length) {
+                    $justRead = $searchStream.Read($window, $filled, $window.Length - $filled)
+                    if ($justRead -le 0) { break }
+                    $filled += $justRead
+                }
+                if ($filled -lt $window.Length) { continue }
+
+                $signatureMatched = $true
+                for ($i = 0; $i -lt $window.Length; $i++) {
+                    if ($window[$i] -ne $signature[$i]) { $signatureMatched = $false; break }
+                }
+
+                if ($signatureMatched) {
+                    $resolvedOffset[$trackNum] = [long]$chunk.DataOffset
+                    $found = $true
+                    Write-Verbose "  Track $trackNum : signature matched at offset $($chunk.DataOffset)."
+                    break
+                }
+            }
+        }
+        finally {
+            $searchStream.Dispose()
+        }
+
+        if (-not $found) {
+            throw "Track $trackNum records a match offset of 0 and its signature bytes appear nowhere in [$SourcePath]. The source is not the release this sample was taken from."
+        }
+    }
+
     # Find the minimum match offset to determine where the sample region starts
     $minMatchOffset = [long]::MaxValue
     foreach ($trackNum in $srsInfo.Tracks.Keys) {
-        $track = $srsInfo.Tracks[$trackNum]
-        if ($track.MatchOffset -lt $minMatchOffset) {
-            $minMatchOffset = $track.MatchOffset
+        if ($resolvedOffset[$trackNum] -lt $minMatchOffset) {
+            $minMatchOffset = $resolvedOffset[$trackNum]
         }
     }
 
@@ -77,7 +143,7 @@ function Build-SampleAviFromSrs {
     $trackChunks = @{}
     foreach ($trackNum in $srsInfo.Tracks.Keys) {
         $track = $srsInfo.Tracks[$trackNum]
-        $matchOffset = $track.MatchOffset
+        $matchOffset = $resolvedOffset[$trackNum]
         $dataLength = $track.DataLength
 
         # Find the first chunk that contains or starts at the match offset
