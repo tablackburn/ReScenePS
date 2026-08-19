@@ -270,6 +270,23 @@ Describe 'Restore-SrsVideo' {
                     [uint32]$RecordedCrc32
                 )
 
+                function ConvertTo-SingleByteEbmlSize {
+                    # Every element here is small enough for a one-byte EBML size, and
+                    # keeping it that way keeps the builder readable. Lengthening a name
+                    # past that would otherwise overflow the [byte] cast and produce a
+                    # plausible-looking but invalid SRS, so fail loudly instead.
+                    param(
+                        [Parameter(Mandatory)]
+                        [int]$Length
+                    )
+
+                    if ($Length -gt 0x7F) {
+                        throw "This builder encodes EBML element sizes as a single-byte VINT, which tops out at 127 bytes; $Length needs a longer encoding."
+                    }
+
+                    return [byte](0x80 + $Length)
+                }
+
                 $applicationName = [System.Text.Encoding]::UTF8.GetBytes('ReScenePS-Test')
                 $sampleName = [System.Text.Encoding]::UTF8.GetBytes('sample.mkv')
 
@@ -291,10 +308,10 @@ Describe 'Restore-SrsVideo' {
                     $fileDataStream.Dispose()
                 }
 
-                $resampleFileElement = [byte[]]@(0x6A, 0x75) + [byte](0x80 + $fileData.Length) + $fileData
-                $resampleElement = [byte[]]@(0x1F, 0x69, 0x75, 0x76) + [byte](0x80 + $resampleFileElement.Length) + $resampleFileElement
+                $resampleFileElement = [byte[]]@(0x6A, 0x75) + (ConvertTo-SingleByteEbmlSize -Length $fileData.Length) + $fileData
+                $resampleElement = [byte[]]@(0x1F, 0x69, 0x75, 0x76) + (ConvertTo-SingleByteEbmlSize -Length $resampleFileElement.Length) + $resampleFileElement
                 $ebmlHeaderElement = [byte[]]@(0x1A, 0x45, 0xDF, 0xA3, 0x84, 0x42, 0x86, 0x81, 0x01)
-                $segmentHeader = [byte[]]@(0x18, 0x53, 0x80, 0x67) + [byte](0x80 + $resampleElement.Length)
+                $segmentHeader = [byte[]]@(0x18, 0x53, 0x80, 0x67) + (ConvertTo-SingleByteEbmlSize -Length $resampleElement.Length)
 
                 [System.IO.File]::WriteAllBytes($Path, $ebmlHeaderElement + $segmentHeader + $resampleElement)
 
@@ -326,8 +343,12 @@ Describe 'Restore-SrsVideo' {
             # reported success.
             $script:wrongSize = [uint64]10123431
 
+            # Only the size disagrees here. Recording the correct CRC32 alongside it is
+            # not a combination a real SRS could hold, and that is the point: it leaves
+            # the size check as the only thing that can reject this rebuild, so the test
+            # cannot be carried by the CRC32 check or by the order the two run in.
             $script:sizeMismatchSrs = Join-Path $script:tempDir 'size_mismatch.srs'
-            $null = Build-VerificationSrsFile -Path $script:sizeMismatchSrs -RecordedSize $script:wrongSize -RecordedCrc32 $script:wrongCrc32
+            $null = Build-VerificationSrsFile -Path $script:sizeMismatchSrs -RecordedSize $script:wrongSize -RecordedCrc32 $script:expectedRebuildCrc32
 
             $script:crcMismatchSrs = Join-Path $script:tempDir 'crc_mismatch.srs'
             $null = Build-VerificationSrsFile -Path $script:crcMismatchSrs -RecordedSize ([uint64]$script:expectedRebuildSize) -RecordedCrc32 $script:wrongCrc32
