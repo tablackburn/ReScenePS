@@ -397,6 +397,28 @@ Describe 'Build-SampleMkvFromSrs' {
             (Get-Item -Path $outputPath).Length - $structureBytes | Should -Be $suppliedTotal
         }
 
+        It 'Fails rather than padding when a track runs out of data' {
+            # A source video that is a different encode of the same release yields
+            # too little track data. Padding the shortfall would produce a sample of
+            # the right length and the wrong content -- which is what used to happen,
+            # reported as success.
+            $shortFiles = @{}
+            foreach ($track in $script:realMetadata.Tracks) {
+                $shortFile = Join-Path $script:tempDir "short-track-$($track.TrackNumber).bin"
+                [System.IO.File]::WriteAllBytes($shortFile, (New-Object byte[] 1024))
+                $shortFiles[$track.TrackNumber] = $shortFile
+            }
+
+            $outputPath = Join-Path $script:tempDir 'taste-sample-short.mkv'
+            { Build-SampleMkvFromSrs -SrsFilePath $script:realSrs `
+                -TrackDataFiles $shortFiles -OutputMkvPath $outputPath } |
+                Should -Throw -ExpectedMessage '*ran out of data*'
+
+            foreach ($path in $shortFiles.Values) {
+                Remove-Item -Path $path -Force -ErrorAction 'SilentlyContinue'
+            }
+        }
+
         AfterAll {
             foreach ($path in @($script:realTrackFiles.Values)) {
                 Remove-Item -Path $path -Force -ErrorAction 'SilentlyContinue'
