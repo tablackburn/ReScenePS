@@ -133,6 +133,16 @@ function Restore-SrsVideo {
             -OutputMkvPath $OutputPath
 
         if ($rebuilt) {
+            # The extracted track data is as large as the sample itself, so drop it
+            # here rather than on the success path only. The rebuild is finished with
+            # it either way, and leaving it behind on a rejected reconstruction was
+            # worth tens of megabytes per release.
+            foreach ($tempFile in $trackDataFiles.Values) {
+                if (Test-Path $tempFile) {
+                    Remove-Item $tempFile -ErrorAction SilentlyContinue
+                }
+            }
+
             # Check the result before claiming success. This used to return $true as
             # soon as a file had been written, which is how a reconstruction that
             # produced a few hundred KB of a ten megabyte sample was reported as
@@ -150,7 +160,11 @@ function Restore-SrsVideo {
             # CRC32 is the real check: the size only says the right number of bytes
             # were written, not that they were the right bytes. A source video that
             # is a different encode of the same release passes on size and fails here.
-            if ($fileData.CRC32) {
+            #
+            # Test for null rather than truthiness. 0 is a legitimate CRC32, and
+            # treating it as "not recorded" would skip the check on the one value it
+            # is least safe to skip it for.
+            if ($null -ne $fileData.CRC32) {
                 $actualCrc32 = Get-Crc32 -FilePath $OutputPath
                 if ($actualCrc32 -ne $fileData.CRC32) {
                     $expected = '0x{0:X8}' -f $fileData.CRC32
@@ -162,13 +176,6 @@ function Restore-SrsVideo {
             }
 
             Write-Host "  [OK] Reconstructed video sample: $(Split-Path $OutputPath -Leaf)" -ForegroundColor Green
-
-            # Cleanup temp track files
-            foreach ($tempFile in $trackDataFiles.Values) {
-                if (Test-Path $tempFile) {
-                    Remove-Item $tempFile -ErrorAction SilentlyContinue
-                }
-            }
 
             return $true
         }

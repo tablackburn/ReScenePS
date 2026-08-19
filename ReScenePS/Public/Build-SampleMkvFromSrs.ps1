@@ -122,7 +122,7 @@ function Build-SampleMkvFromSrs {
 
                         if ($frameDataSize -gt 0) {
                             if ($null -eq $trackStream) {
-                                throw "No extracted data for track $trackNumber, which block $blockCount needs $frameDataSize bytes of."
+                                throw "Block $blockCount needs $frameDataSize bytes from track $trackNumber, but no data was extracted for that track."
                             }
 
                             # Stream.Read is permitted to return fewer bytes than asked

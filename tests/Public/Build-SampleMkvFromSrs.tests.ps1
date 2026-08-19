@@ -318,7 +318,7 @@ Describe 'Build-SampleMkvFromSrs' {
             # produce a file of the right length whose contents are wrong, and report
             # success -- so this has to fail instead.
             { Build-SampleMkvFromSrs -SrsFilePath $srsFile -TrackDataFiles @{} -OutputMkvPath $outputPath } |
-                Should -Throw -ExpectedMessage '*No extracted data for track*'
+                Should -Throw -ExpectedMessage '*no data was extracted for that track*'
         }
     }
 
