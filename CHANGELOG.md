@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
+- `Restore-SrsVideo` produced a truncated MKV sample and reported success. An SRS
+  stores each block's header and original size but not the frame data, so the
+  rebuild consumed bytes that were not there, ran past the end of the SRS after
+  the first block, and wrote a fraction of the sample. For a 10,123,431 byte
+  sample it produced 52,755 bytes. The rebuild now also verifies its output
+  against the size and CRC32 the SRS records rather than returning `$true` as
+  soon as a file exists, and fails loudly when a track runs out of data instead
+  of padding the gap with zeros.
+
 - `Restore-SrsVideo` could not reconstruct MKV samples. `SourceMkvPath` and
   `OutputMkvPath` are parameter aliases, not variables, so the MKV branch passed
   empty strings and failed with "Cannot bind argument to parameter

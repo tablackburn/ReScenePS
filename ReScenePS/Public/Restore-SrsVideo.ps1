@@ -133,6 +133,34 @@ function Restore-SrsVideo {
             -OutputMkvPath $OutputPath
 
         if ($rebuilt) {
+            # Check the result before claiming success. This used to return $true as
+            # soon as a file had been written, which is how a reconstruction that
+            # produced a few hundred KB of a ten megabyte sample was reported as
+            # having worked. The SRS records the original sample's size and CRC32, so
+            # there is no need to take the rebuild's word for it.
+            $fileData = $srsMetadata.FileData
+            $actualSize = (Get-Item -Path $OutputPath).Length
+
+            if ($fileData.OriginalSize -gt 0 -and $actualSize -ne $fileData.OriginalSize) {
+                Write-Warning "Reconstructed sample is $actualSize bytes but the SRS records $($fileData.OriginalSize). Discarding it."
+                Remove-Item -Path $OutputPath -Force -ErrorAction 'SilentlyContinue'
+                return $false
+            }
+
+            # CRC32 is the real check: the size only says the right number of bytes
+            # were written, not that they were the right bytes. A source video that
+            # is a different encode of the same release passes on size and fails here.
+            if ($fileData.CRC32) {
+                $actualCrc32 = Get-Crc32 -FilePath $OutputPath
+                if ($actualCrc32 -ne $fileData.CRC32) {
+                    $expected = '0x{0:X8}' -f $fileData.CRC32
+                    $actual = '0x{0:X8}' -f $actualCrc32
+                    Write-Warning "Reconstructed sample CRC32 is $actual but the SRS records $expected. The source video is not the release this sample came from. Discarding it."
+                    Remove-Item -Path $OutputPath -Force -ErrorAction 'SilentlyContinue'
+                    return $false
+                }
+            }
+
             Write-Host "  [OK] Reconstructed video sample: $(Split-Path $OutputPath -Leaf)" -ForegroundColor Green
 
             # Cleanup temp track files

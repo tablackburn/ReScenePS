@@ -120,14 +120,44 @@ function Build-SampleMkvFromSrs {
                         $trackStream = $null
                         foreach ($key in $trackDataStreams.Keys) { if ($key -eq $trackNumber) { $trackStream = $trackDataStreams[$key]; break } }
 
-                        if ($null -ne $trackStream -and $trackStream.Position -lt $trackStream.Length -and $frameDataSize -gt 0) {
-                            $frameData = New-Object byte[] $frameDataSize; $bytesRead = $trackStream.Read($frameData, 0, [int]$frameDataSize); $outWriter.Write($frameData, 0, $bytesRead)
-                        } elseif ($frameDataSize -gt 0) {
-                            $zeros = New-Object byte[] $frameDataSize; $outWriter.Write($zeros, 0, $zeros.Length)
+                        if ($frameDataSize -gt 0) {
+                            if ($null -eq $trackStream) {
+                                throw "No extracted data for track $trackNumber, which block $blockCount needs $frameDataSize bytes of."
+                            }
+
+                            # Stream.Read is permitted to return fewer bytes than asked
+                            # for, so read in a loop. Taking the first result would
+                            # silently write a short block and corrupt the sample.
+                            $frameData = New-Object byte[] $frameDataSize
+                            $filled = 0
+                            while ($filled -lt $frameDataSize) {
+                                $justRead = $trackStream.Read($frameData, $filled, [int]($frameDataSize - $filled))
+                                if ($justRead -le 0) { break }
+                                $filled += $justRead
+                            }
+
+                            if ($filled -lt $frameDataSize) {
+                                throw "Track $trackNumber ran out of data at block $blockCount; needed $frameDataSize bytes, got $filled. The source video is not the release this SRS was made from."
+                            }
+
+                            $outWriter.Write($frameData, 0, $filled)
                         }
-                        # Skip past placeholder frame data in SRS file
-                        if ($frameDataSize -gt 0) { $srsReader.ReadBytes([int]$frameDataSize) | Out-Null }
-                    } catch { break }
+
+                        # No skip here on purpose. An SRS stores each block's header
+                        # and the original size in its element header, but not the
+                        # frame data itself -- that is what makes a 24 KB SRS describe
+                        # a 10 MB sample. Consuming $frameDataSize bytes from the SRS
+                        # ran the reader past the end of the file, so the walk stopped
+                        # after the first block and produced a fraction of the sample
+                        # while still reporting success.
+                    }
+                    catch {
+                        # Rethrow rather than break. Breaking here abandoned the walk
+                        # mid-file and still returned $true, so a malformed SRS or a
+                        # track that ran dry produced a short sample reported as a
+                        # good one.
+                        throw "Failed rebuilding block $blockCount : $($_.Exception.Message)"
+                    }
                     $elemCount++; continue
                 }
 

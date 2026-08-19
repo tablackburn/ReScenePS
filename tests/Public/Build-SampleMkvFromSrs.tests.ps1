@@ -277,7 +277,7 @@ Describe 'Build-SampleMkvFromSrs' {
             Test-Path $outputPath | Should -BeTrue
         }
 
-        It 'Writes zeros when track data is missing' {
+        It 'Fails when a block needs track data that was not supplied' {
             $srsFile = Join-Path $script:tempDir 'missing-track.srs'
             $outputPath = Join-Path $script:tempDir 'missing-track-output.mkv'
 
@@ -314,11 +314,93 @@ Describe 'Build-SampleMkvFromSrs' {
             $bw.Dispose()
             $ms.Dispose()
 
-            # Provide no track data - should fill with zeros
-            $result = Build-SampleMkvFromSrs -SrsFilePath $srsFile -TrackDataFiles @{} -OutputMkvPath $outputPath
+            # A block needs frame data and none was supplied. Zero-filling it would
+            # produce a file of the right length whose contents are wrong, and report
+            # success -- so this has to fail instead.
+            { Build-SampleMkvFromSrs -SrsFilePath $srsFile -TrackDataFiles @{} -OutputMkvPath $outputPath } |
+                Should -Throw -ExpectedMessage '*No extracted data for track*'
+        }
+    }
 
-            $result | Should -BeTrue
-            Test-Path $outputPath | Should -BeTrue
+    Context 'Rebuilding from a real SRS' {
+
+        # Every other fixture in this file writes frame data into the block. A real
+        # SRS stores the block header and the original size, and omits the data --
+        # that is what makes a 24 KB SRS describe a 10 MB sample. Rebuilding used to
+        # consume the absent bytes from the SRS, run off the end of the file after
+        # the first block, and return a fraction of the sample while reporting
+        # success: 52,755 bytes of a 10,123,431 byte sample for this exact fixture.
+        #
+        # No source video is needed to catch that. Feed the rebuild track data of the
+        # length the SRS itself declares, and the output has to come out at exactly
+        # the size the SRS records.
+        BeforeAll {
+            $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+            $srrPath = Join-Path $projectRoot 'tests/samples/The.Mummy.Resurrected.2014.PROPER.DVDRiP.X264-TASTE.srr'
+
+            $script:realSrs = Join-Path $script:tempDir 'taste-sample.srs'
+            InModuleScope 'ReScenePS' -Parameters @{ srr = $srrPath; dest = $script:realSrs } {
+                Export-StoredFile -SrrFile $srr -FileName '*taste-sample.srs' -OutputPath $dest
+            }
+
+            $script:realMetadata = ConvertFrom-SrsFileMetadata -SrsFilePath $script:realSrs
+
+            # Synthetic payloads: the right number of bytes, contents irrelevant.
+            $script:realTrackFiles = @{}
+            foreach ($track in $script:realMetadata.Tracks) {
+                $trackFile = Join-Path $script:tempDir "real-track-$($track.TrackNumber).bin"
+                $stream = [System.IO.File]::Create($trackFile)
+                try {
+                    $buffer = New-Object byte[] 65536
+                    [int64]$remaining = $track.DataLength
+                    while ($remaining -gt 0) {
+                        $chunk = [Math]::Min([int64]$buffer.Length, $remaining)
+                        $stream.Write($buffer, 0, [int]$chunk)
+                        $remaining -= $chunk
+                    }
+                }
+                finally {
+                    $stream.Dispose()
+                }
+                $script:realTrackFiles[$track.TrackNumber] = $trackFile
+            }
+        }
+
+        It 'Extracts an SRS whose blocks are larger than the SRS itself' {
+            # Guards the premise: if this fixture ever did store frame data, the test
+            # below would pass for the wrong reason.
+            $srsLength = (Get-Item -Path $script:realSrs).Length
+            $script:realMetadata.FileData.OriginalSize | Should -BeGreaterThan $srsLength
+        }
+
+        It 'Rebuilds to exactly the size the SRS records' {
+            $outputPath = Join-Path $script:tempDir 'taste-sample-rebuilt.mkv'
+
+            $rebuilt = Build-SampleMkvFromSrs -SrsFilePath $script:realSrs `
+                -TrackDataFiles $script:realTrackFiles -OutputMkvPath $outputPath
+
+            $rebuilt | Should -BeTrue
+            (Get-Item -Path $outputPath).Length | Should -Be $script:realMetadata.FileData.OriginalSize
+        }
+
+        It 'Consumes every byte of the supplied track data' {
+            # The counterpart to the size check: the output could be the right length
+            # while the block walk stopped early and the tail of each track went
+            # unused.
+            $outputPath = Join-Path $script:tempDir 'taste-sample-consumed.mkv'
+            $null = Build-SampleMkvFromSrs -SrsFilePath $script:realSrs `
+                -TrackDataFiles $script:realTrackFiles -OutputMkvPath $outputPath
+
+            $suppliedTotal = ($script:realMetadata.Tracks | Measure-Object -Property 'DataLength' -Sum).Sum
+            $structureBytes = $script:realMetadata.FileData.OriginalSize - $suppliedTotal
+            $structureBytes | Should -BeGreaterThan 0
+            (Get-Item -Path $outputPath).Length - $structureBytes | Should -Be $suppliedTotal
+        }
+
+        AfterAll {
+            foreach ($path in @($script:realTrackFiles.Values)) {
+                Remove-Item -Path $path -Force -ErrorAction 'SilentlyContinue'
+            }
         }
     }
 
