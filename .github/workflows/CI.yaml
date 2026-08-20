@@ -22,42 +22,23 @@ jobs:
       with:
         # No authenticated git commands run in this job.
         persist-credentials: false
-    - name: Install PSScriptAnalyzer
+    # Lint through the build rather than calling Invoke-ScriptAnalyzer directly.
+    #
+    # The direct call passed -Settings PSGallery and analysed the source tree,
+    # while ./build.ps1 -Task Analyze uses this repository's
+    # PSScriptAnalyzerSettings.psd1 and analyses the built module. Two rulesets
+    # over two different paths, so a local run and this job could disagree
+    # without either being wrong. The step this replaced already aimed at
+    # matching a local run -- it pinned the analyzer version for exactly that
+    # reason -- but pinning the version cannot help while the settings and the
+    # path still differ.
+    - name: Install dependencies
       shell: pwsh
-      run: |
-        # Pin to the version build.depend.psd1 declares, so lint results here match
-        # a local ./build.ps1 -Task Analyze. Accepting whatever the runner image
-        # happens to ship means the two can disagree silently.
-        $required = (Import-PowerShellDataFile -Path build.depend.psd1).PSScriptAnalyzer.Version
-        $installed = Get-Module -Name PSScriptAnalyzer -ListAvailable |
-          Where-Object { $_.Version -eq $required }
-        if ($installed) {
-          Write-Host "PSScriptAnalyzer $required already available; skipping install."
-          return
-        }
+      run: ./build.ps1 -Bootstrap -Task Init
 
-        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-        Install-Module -Name PSScriptAnalyzer -RequiredVersion $required -Force -Scope CurrentUser
     - name: Run PSScriptAnalyzer
       shell: pwsh
-      run: |
-        $required = (Import-PowerShellDataFile -Path build.depend.psd1).PSScriptAnalyzer.Version
-        Import-Module -Name PSScriptAnalyzer -RequiredVersion $required -Force -ErrorAction Stop
-        $results = Invoke-ScriptAnalyzer -Path ./ReScenePS -Recurse -Settings PSGallery -ReportSummary
-        $errors = $results | Where-Object { $_.Severity -eq 'Error' }
-
-        if ($results) {
-          Write-Host "::group::PSScriptAnalyzer Results"
-          $results | Format-Table -AutoSize
-          Write-Host "::endgroup::"
-        }
-
-        if ($errors) {
-          Write-Host "::error::PSScriptAnalyzer found $($errors.Count) error(s)"
-          exit 1
-        }
-
-        Write-Host "PSScriptAnalyzer passed with no errors"
+      run: ./build.ps1 -Task Analyze
 
   test:
     name: Unit Tests (${{ matrix.os }})
